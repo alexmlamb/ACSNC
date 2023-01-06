@@ -1,5 +1,8 @@
 
-from data import BlockEnv
+#from block_pull_env import BlockEnv
+
+from block_push_env import BlockEnv
+
 from models import Encoder, Probe, AC
 import torch
 import numpy as np
