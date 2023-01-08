@@ -1,7 +1,8 @@
 
-#from block_pull_env import BlockEnv
 
+#from block_pull_env import BlockEnv
 from block_push_env import BlockEnv
+
 
 from models import Encoder, Probe, AC
 import torch
@@ -68,10 +69,10 @@ if __name__ == "__main__":
     env = BlockEnv()
 
     ac = AC(256, nk=25, nact=5).cuda()
-    enc = Encoder(36*2, 256).cuda()
-    a_probe = Probe(256, 36).cuda()
-    b_probe = Probe(256, 36).cuda()
-    e_probe = Probe(256, 36).cuda()
+    enc = Encoder(env.m**2 * 2, 256).cuda()
+    a_probe = Probe(256, env.m**2).cuda()
+    b_probe = Probe(256, env.m**2).cuda()
+    e_probe = Probe(256, env.m**2).cuda()
 
     opt = torch.optim.Adam(list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()))
 
@@ -101,9 +102,9 @@ if __name__ == "__main__":
     bst = np.array(bst).astype('int64')
     est = np.array(est).astype('int64')
 
-    for j in range(0, 100000):
-        xt, xtk, k, a, astate, bstate, estate = sample_batch(X, A, ast, bst, est, 128)
-        
+    for j in range(0, 200000):
+        xt, xtk, k, a, astate, bstate, estate = sample_batch(X, A, ast, bst, est, 256)
+
         st = enc(xt)
         stk = enc(xtk)
 

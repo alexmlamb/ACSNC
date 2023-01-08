@@ -22,11 +22,11 @@ class BlockEnv:
         self.agent_pos = [0,0]
         self.block_pos = [1,1]
 
-        self.exo = np.zeros(shape=(36,))
-        self.exo_ind = random.randint(0,35)
-        self.exo[self.exo_ind] += 1.0
+        self.m = 10
 
-        self.m = 6
+        self.exo = np.zeros(shape=(self.m**2,))
+        self.exo_ind = random.randint(0,self.m**2 - 1)
+        self.exo[self.exo_ind] += 1.0
 
     def step(self, a): 
 
@@ -41,35 +41,39 @@ class BlockEnv:
         elif a == 4:
             delta = [0, 0]
 
+        self.agent_pos[0] += delta[0]
+        self.agent_pos[1] += delta[1]
+
         if self.agent_pos == self.block_pos:
             self.block_pos[0] += delta[0]
             self.block_pos[1] += delta[1]
 
-        self.agent_pos[0] += delta[0]
-        self.agent_pos[1] += delta[1]
+        if self.block_pos[0] == -1:
+            self.block_pos[0] = self.m - 1
+        if self.block_pos[0] == self.m:
+            self.block_pos[0] = 0
 
-        if self.block_pos[0] == 0:
-            self.block_pos[0] += 1
-        if self.block_pos[0] == self.m-1:
-            self.block_pos[0] -= 1
-
-        if self.block_pos[1] == 0:
-            self.block_pos[1] += 1
-        if self.block_pos[1] == self.m-1:
-            self.block_pos[1] -= 1
+        if self.block_pos[1] == -1:
+            self.block_pos[1] = self.m - 1
+        if self.block_pos[1] == self.m:
+            self.block_pos[1] = 0
 
         if self.agent_pos[0] == -1:
-            self.agent_pos[0] += 1
+            self.agent_pos[0] = self.m - 1
         if self.agent_pos[0] == self.m:
-            self.agent_pos[0] -= 1
+            self.agent_pos[0] = 0
 
         if self.agent_pos[1] == -1:
-            self.agent_pos[1] += 1
+            self.agent_pos[1] = self.m - 1
         if self.agent_pos[1] == self.m:
-            self.agent_pos[1] -= 1
+            self.agent_pos[1] = 0
 
-        self.exo = np.zeros(shape=(36,))
-        self.exo_ind = random.randint(0,35)
+        if self.agent_pos == self.block_pos:
+            self.block_pos[0] += delta[0]
+            self.block_pos[1] += delta[1]
+
+        self.exo = np.zeros(shape=(self.m**2,))
+        self.exo_ind = random.randint(0,self.m**2 - 1)
         self.exo[self.exo_ind] += 1.0
 
     def get_obs(self):
@@ -84,10 +88,12 @@ class BlockEnv:
                 elif self.block_pos == [i,j]:
                     x[j,i] += 2.0
 
+
         agent_state = self.agent_pos[0]*self.m + self.agent_pos[1]
         block_state = self.block_pos[0]*self.m + self.block_pos[1]
 
-        x = np.concatenate([x, self.exo.reshape((6,6))], axis=1)
+
+        x = np.concatenate([x, self.exo.reshape((self.m,self.m))], axis=1)
 
         return x.flatten(), agent_state, block_state, self.exo_ind
 
@@ -115,8 +121,8 @@ if __name__ == "__main__":
     for i in range(0,5000):
         a = random.randint(0,4)
         env.render()
-        env.step(a)
         print(a)
+        env.step(a)
 
 
 

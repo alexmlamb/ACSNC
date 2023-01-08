@@ -9,7 +9,7 @@ class AC(nn.Module):
 
         self.kemb = nn.Embedding(nk, din)
 
-        self.m = nn.Sequential(nn.Linear(din*3, 256), nn.LeakyReLU(), nn.Linear(256,256), nn.LeakyReLU(), nn.Linear(256, nact))
+        self.m = nn.Sequential(nn.Linear(din*3, 256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256,256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256, nact))
 
     def forward(self, st, stk, k, a): 
 
@@ -28,7 +28,7 @@ class Encoder(nn.Module):
     def __init__(self, din, dout):
         super().__init__()
 
-        self.m = nn.Sequential(nn.Linear(din, 256), nn.LeakyReLU(), nn.Linear(256,256), nn.LeakyReLU(), nn.Linear(256, dout))
+        self.m = nn.Sequential(nn.Linear(din, 256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256,256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256, dout))
 
     def forward(self, x):
         return self.m(x)
@@ -38,7 +38,7 @@ class Probe(nn.Module):
     def __init__(self, din, dout):
         super().__init__()
 
-        self.m = nn.Sequential(nn.Linear(din, 256), nn.LeakyReLU(), nn.Linear(256,256), nn.LeakyReLU(), nn.Linear(256, dout))
+        self.m = nn.Sequential(nn.Linear(din, 256), nn.LeakyReLU(), nn.Linear(256,256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256, dout))
 
     def forward(self, s, gt):
 
