@@ -1,127 +1,77 @@
 '''
-Environment where we have a 6x6 grid, and the inner 5x5 region has a block which the agent can push along with it as it moves, but only within 5x5 region.  
+    Environment where agent moves in the (0,255), where the state is kept to always be divisible by 256.  
 
-agent_pos: 2-vector
-block_pos: 2-vector
+    agent_pos: 2-vector
 
-x,y
+    x,y
 
-render function to image.  1 for edge, 0 for inner part.  
+    render function to image.  Place a pixel in a 256x256 image where the agent is.  
 
-a - left (0), right (1), up (2), down (3), same (4)
+    a - left (0), right (1), up (2), down (3), same (4)
 
 '''
 
-#import torch
 import numpy as np
 import random
 
-class BlockEnv:
+def div_cast(x, m=100):
+    for i in range(len(x)):
+        e = x[i]
+        e = int(e*m)
+        e = e/m
+        x[i] = e
+    return x
+
+class RoomEnv:
 
     def __init__(self):
         self.agent_pos = [0,0]
-        self.block_pos = [1,1]
 
-        self.m = 10
+    def random_action(self): 
 
-        self.exo = np.zeros(shape=(self.m**2,))
-        self.exo_ind = random.randint(0,self.m**2 - 1)
-        self.exo[self.exo_ind] += 1.0
+        delta = [0, 0]
+        delta[0] = random.uniform(-0.1, 0.1)
+        delta[1] = random.uniform(-0.1, 0.1)
 
-    def step(self, a): 
+        return div_cast(delta)
 
-        if a == 0:
-            delta = [-1,0]
-        elif a == 1:
-            delta = [1, 0]
-        elif a == 2:
-            delta = [0, -1]
-        elif a == 3:
-            delta = [0, 1]
-        elif a == 4:
-            delta = [0, 0]
+    def step(self, a):
 
-        self.agent_pos[0] += delta[0]
-        self.agent_pos[1] += delta[1]
+        self.agent_pos = div_cast(self.agent_pos)
 
-        if self.agent_pos == self.block_pos:
-            self.block_pos[0] += delta[0]
-            self.block_pos[1] += delta[1]
+        self.agent_pos[0] += a[0]
+        self.agent_pos[1] += a[1]
 
-        if self.block_pos[0] == -1:
-            self.block_pos[0] = self.m - 1
-        if self.block_pos[0] == self.m:
-            self.block_pos[0] = 0
-
-        if self.block_pos[1] == -1:
-            self.block_pos[1] = self.m - 1
-        if self.block_pos[1] == self.m:
-            self.block_pos[1] = 0
-
-        if self.agent_pos[0] == -1:
-            self.agent_pos[0] = self.m - 1
-        if self.agent_pos[0] == self.m:
+        if self.agent_pos[0] <= 0:
             self.agent_pos[0] = 0
+        if self.agent_pos[0] >= 1:
+            self.agent_pos[0] = 1
 
-        if self.agent_pos[1] == -1:
-            self.agent_pos[1] = self.m - 1
-        if self.agent_pos[1] == self.m:
+        if self.agent_pos[1] <= 0:
             self.agent_pos[1] = 0
+        if self.agent_pos[1] >= 1:
+            self.agent_pos[1] = 1
 
-        if self.agent_pos == self.block_pos:
-            self.block_pos[0] += delta[0]
-            self.block_pos[1] += delta[1]
-
-        self.exo = np.zeros(shape=(self.m**2,))
-        self.exo_ind = random.randint(0,self.m**2 - 1)
-        self.exo[self.exo_ind] += 1.0
+        self.agent_pos = div_cast(self.agent_pos)
 
     def get_obs(self):
-        x = np.zeros(shape=(self.m, self.m))
+        x = np.zeros(shape=(100, 100))
 
-        for j in range(self.m):
-            for i in range(self.m):
-                if self.agent_pos == [i,j] and self.block_pos == [i,j]:
-                    x[j,i] += 3.0
-                elif self.agent_pos == [i,j]:
-                    x[j,i] += 1.0
-                elif self.block_pos == [i,j]:
-                    x[j,i] += 2.0
+        x[self.agent_pos[0]*100, self.agent_pos[1]*100] += 1
 
+        #x = np.concatenate([x, self.exo.reshape((self.m,self.m))], axis=1)
 
-        agent_state = self.agent_pos[0]*self.m + self.agent_pos[1]
-        block_state = self.block_pos[0]*self.m + self.block_pos[1]
-
-
-        x = np.concatenate([x, self.exo.reshape((self.m,self.m))], axis=1)
-
-        return x.flatten(), agent_state, block_state, self.exo_ind
-
-    def render(self):
-
-        for j in range(self.m):
-            for i in range(self.m):
-                if self.agent_pos == [i,j] and self.block_pos == [i,j]:
-                    c = "X"
-                elif self.agent_pos == [i,j]:
-                    c = 'x'
-                elif self.block_pos == [i,j]:
-                    c = 'b'
-                else:
-                    c = '.'
-                print(c,end=' ')
-            print("")
+        return x.flatten(), self.agent_pos
 
 
 if __name__ == "__main__":
 
-    env = BlockEnv()
+    env = RoomEnv()
 
-    import random
     for i in range(0,5000):
-        a = random.randint(0,4)
-        env.render()
-        print(a)
+        a = env.random_action()
+        print('s', env.agent_pos)
+        print('a', a)
         env.step(a)
 
 
