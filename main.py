@@ -27,7 +27,7 @@ bs_probe
 
 def sample_example(X, A, ast, bst, est): 
     N = X.shape[0]
-    maxk = 20
+    maxk = 40
     t = random.randint(0, N - maxk - 1)
     k = random.randint(1, maxk)
 
@@ -68,7 +68,7 @@ if __name__ == "__main__":
 
     env = BlockEnv()
 
-    ac = AC(256, nk=25, nact=5).cuda()
+    ac = AC(256, nk=45, nact=5).cuda()
     enc = Encoder(env.m**2 * 2, 256).cuda()
     a_probe = Probe(256, env.m**2).cuda()
     b_probe = Probe(256, env.m**2).cuda()
