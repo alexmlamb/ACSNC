@@ -17,7 +17,7 @@ import random
 def div_cast(x, m=100):
     for i in range(len(x)):
         e = x[i]
-        e = int(e*m)
+        e = round(e*m)
         e = e/m
         x[i] = e
     return x
@@ -37,6 +37,8 @@ class RoomEnv:
 
     def step(self, a):
 
+        self.agent_pos = self.agent_pos[:]
+
         self.agent_pos = div_cast(self.agent_pos)
 
         self.agent_pos[0] += a[0]
@@ -45,24 +47,32 @@ class RoomEnv:
         if self.agent_pos[0] <= 0:
             self.agent_pos[0] = 0
         if self.agent_pos[0] >= 1:
-            self.agent_pos[0] = 1
+            self.agent_pos[0] = 0.99
 
         if self.agent_pos[1] <= 0:
             self.agent_pos[1] = 0
         if self.agent_pos[1] >= 1:
-            self.agent_pos[1] = 1
+            self.agent_pos[1] = 0.99
 
-        self.agent_pos = div_cast(self.agent_pos)
+        self.agent_pos = div_cast(self.agent_pos)[:]
+
+    def synth_obs(self, ap):
+        x = np.zeros(shape=(100, 100))
+
+        x[int(round(ap[0]*100)), int(round(ap[1]*100))] += 1
+
+        return x.flatten()
 
     def get_obs(self):
         x = np.zeros(shape=(100, 100))
 
-        x[self.agent_pos[0]*100, self.agent_pos[1]*100] += 1
+        x[int(round(self.agent_pos[0]*100)), int(round(self.agent_pos[1]*100))] += 1
 
         #x = np.concatenate([x, self.exo.reshape((self.m,self.m))], axis=1)
 
-        return x.flatten(), self.agent_pos
+        exo = [0.0, 0.0]
 
+        return x.flatten(), self.agent_pos, exo
 
 if __name__ == "__main__":
 
@@ -72,6 +82,8 @@ if __name__ == "__main__":
         a = env.random_action()
         print('s', env.agent_pos)
         print('a', a)
+        x,_,_ = env.get_obs()
+        print('x-argmax', x.argmax())
         env.step(a)
 
 
