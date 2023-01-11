@@ -76,6 +76,12 @@ if __name__ == "__main__":
     b_probe = Probe(256, 2).cuda()
     e_probe = Probe(256, 2).cuda()
 
+    from ema_pytorch import EMA
+
+    ema_enc = EMA(enc, beta = 0.99)
+    ema_forward = EMA(forward, beta = 0.99)
+    ema_a_probe = EMA(a_probe.enc, beta = 0.99)
+
     opt = torch.optim.Adam(list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()) + list(forward.parameters()))
 
     X = []
@@ -84,7 +90,7 @@ if __name__ == "__main__":
     est = []
 
     import random
-    for i in range(0,50000):
+    for i in range(0,500000):
         a = env.random_action()
 
         x, agent_state, exo_state = env.get_obs()
@@ -113,7 +119,7 @@ if __name__ == "__main__":
         #print('encoding xtk')
         stk = enc(xtk)
 
-        stn = enc(xtn)
+        stn = ema_enc(xtn)
 
         #print('xt-extract-0', (xt[0].reshape((100,100))==1).nonzero(as_tuple=True)[0])
 
@@ -137,6 +143,10 @@ if __name__ == "__main__":
         opt.step()
         opt.zero_grad()
         
+        ema_forward.update()
+        ema_a_probe.update()
+        ema_enc.update()
+
         if j % 100 == 0:
             print(j, ac_loss.item(), 'A_loss', ap_abserr.item())
 
@@ -148,7 +158,7 @@ if __name__ == "__main__":
 
 
         def vectorplot(a_use, name):
-            a_probe.eval()
+            ema_a_probe.eval()
             #forward.eval()
             #enc.eval()
 
@@ -165,10 +175,10 @@ if __name__ == "__main__":
             action = torch.Tensor(np.array(action)).cuda()
             xl = torch.Tensor(xl).cuda()
             print(xl.shape, action.shape)
-            zt = enc(xl)
-            ztn = forward(zt, action)
-            st_inf = a_probe.enc(zt)
-            stn_inf = a_probe.enc(ztn)
+            zt = ema_enc(xl)
+            ztn = ema_forward(zt, action)
+            st_inf = ema_a_probe(zt)
+            stn_inf = ema_a_probe(ztn)
             print('st', st_inf[30], 'stn', stn_inf[30])
 
             px = st_inf[:,0]
@@ -182,7 +192,7 @@ if __name__ == "__main__":
             
             plt.clf()
 
-            a_probe.train()
+            ema_a_probe.train()
             #forward.train()
             #enc.train()
 
