@@ -1,7 +1,7 @@
 
 
-#from block_pull_env import BlockEnv
-from block_push_env import BlockEnv
+from block_pull_env import BlockEnv
+#from block_push_env import BlockEnv
 
 
 from models import Encoder, Probe, AC
@@ -107,6 +107,9 @@ if __name__ == "__main__":
 
         st = enc(xt)
         stk = enc(xtk)
+
+        print(a[10:20])
+        print(astate[10:20])
 
         ac_loss = ac(st, stk, k, a)
         ap_loss, ap_acc = a_probe(st, astate)
