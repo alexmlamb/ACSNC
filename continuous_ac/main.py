@@ -80,6 +80,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # wandb init
+    if args.use_wandb:
+        wandb.init(project=args.wandb_project_name, save_code=True)
+
     # Train
     env = RoomEnv()
 
