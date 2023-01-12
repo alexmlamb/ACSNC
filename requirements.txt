@@ -1,2 +1,4 @@
 torch
 numpy
+ema-pytorch
+wandb
