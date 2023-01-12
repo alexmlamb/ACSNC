@@ -159,8 +159,8 @@ if __name__ == "__main__":
 
         def vectorplot(a_use, name):
             ema_a_probe.eval()
-            #forward.eval()
-            #enc.eval()
+            #ema_forward.eval()
+            #ema_enc.eval()
 
             #make grid
             action = []
@@ -193,8 +193,54 @@ if __name__ == "__main__":
             plt.clf()
 
             ema_a_probe.train()
-            #forward.train()
-            #enc.train()
+            #ema_forward.train()
+            #ema_enc.train()
+
+            return xl, action
+
+        def squareplot(x_r, a_r):
+
+            ema_a_probe.eval()
+            #ema_forward.eval()
+            #ema_enc.eval()
+
+            true_s = [0.4,0.4]
+            xl = env.synth_obs(ap=true_s)
+            xl = torch.Tensor(xl).cuda().unsqueeze(0)
+            
+            xl = torch.cat([xl, x_r], dim=0)
+
+            zt = ema_enc(xl)
+
+            st_lst = []
+
+            a_lst = [[0.1,0.0],[0.1,0.0],[0.0,0.1],[0.0,0.1],[-0.1,0.0],[-0.1,0.0],[0.0,-0.1],[0.0,-0.1],[0.0,0.0],[0.0,0.0]]
+            for a in a_lst:
+                action = torch.Tensor(np.array(a)).cuda().unsqueeze(0)
+                action = torch.cat([action, a_r], dim=0)
+                st = ema_a_probe(zt)
+                st_lst.append(st.data.cpu()[0:1])
+                zt = ema_forward(zt, action)
+                print('st', st[0:1])
+                print('action', a)
+
+            st_lst = torch.cat(st_lst, dim=0)
+
+            true_sq = np.array([[0.4,0.4],[0.5,0.4],[0.6,0.4],[0.6,0.5],[0.6,0.6],[0.5,0.6],[0.4,0.6],[0.4,0.5],[0.4,0.4],[0.4,0.4]])
+
+            plt.plot(st_lst[:,0].numpy(), st_lst[:,1].numpy())
+            plt.plot(true_sq[:,0], true_sq[:,1])
+            plt.ylim(0,1)
+            plt.xlim(0,1)
+
+            plt.title("Square Plan")
+            plt.savefig('vectorfield_plan.png')
+            plt.clf()
+
+            ema_a_probe.train()
+            #ema_forward.train()
+            #ema_enc.train()
+
 
         if True and j % 1000 == 0:
             vectorplot([0.0, 0.1], 'up')
@@ -202,7 +248,10 @@ if __name__ == "__main__":
             vectorplot([-0.1, 0.0], 'left')
             vectorplot([0.1, 0.0], 'right')
             vectorplot([0.1, 0.1], 'up-right')
-            vectorplot([-0.1, -0.1], 'down-left')
+            x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
+
+            squareplot(x_r, a_r)
+
 
 
 
