@@ -30,7 +30,7 @@ bs_probe
 
 def sample_example(X, A, ast, est): 
     N = X.shape[0]
-    maxk = 10 #5
+    maxk = 5 #5
     t = random.randint(0, N - maxk - 1)
     k = random.randint(1, maxk)
 
@@ -81,8 +81,8 @@ if __name__ == "__main__":
     from ema_pytorch import EMA
 
     ema_enc = EMA(enc, beta = 0.99)
-    ema_forward = EMA(forward, beta = 0.99, update_after_step=5000)
-    ema_a_probe = EMA(a_probe.enc, beta = 0.99, update_after_step=5000)
+    ema_forward = EMA(forward, beta = 0.99)
+    ema_a_probe = EMA(a_probe.enc, beta = 0.99)
 
     opt = torch.optim.Adam(list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()) + list(forward.parameters()))
 
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     est = []
 
     import random
-    for i in range(0,50000):
+    for i in range(0,500000):
         a = env.random_action()
 
         x, agent_state, exo_state = env.get_obs()
@@ -120,14 +120,16 @@ if __name__ == "__main__":
 
         #print('-----')
 
-        xjoin = torch.cat([xt,xtn,xtk],dim=0)
-        sjoin = enc(xjoin)
-        st, stn, stk = torch.chunk(sjoin, 3, dim=0)
+        #xjoin = torch.cat([xt,xtn,xtk],dim=0)
+        #sjoin = enc(xjoin)
+        #st, stn, stk = torch.chunk(sjoin, 3, dim=0)
 
 
-        #st = enc(xt)
-        #stk = enc(xtk)
-        #stn = enc(xtn)
+        st = enc(xt)
+        stk = enc(xtk)
+        
+
+        stn = ema_enc(xtn)
 
 
         ac_loss = ac(st, stk, k, a)
@@ -156,7 +158,7 @@ if __name__ == "__main__":
             #print('s[t]', a_probe.enc(st)[0], 'a[t]', a[0])
             #print('s[t+1]', a_probe.enc(stn)[0], 'z[t+1]', a_probe.enc(z_pred)[0])
 
-        #ema_a_probe.eval()
+        ema_a_probe.eval()
         #ema_forward.eval()
         #ema_enc.eval()
 
@@ -177,10 +179,10 @@ if __name__ == "__main__":
             action = torch.Tensor(np.array(action)).cuda()
             xl = torch.Tensor(xl).cuda()
             print(xl.shape, action.shape)
-            zt = enc(xl)
-            ztn = forward(zt, action)
-            st_inf = a_probe(zt)
-            stn_inf = a_probe(ztn)
+            zt = ema_enc(xl)
+            ztn = ema_forward(zt, action)
+            st_inf = ema_a_probe(zt)
+            stn_inf = ema_a_probe(ztn)
             print('st', st_inf[30], 'stn', stn_inf[30])
 
             px = st_inf[:,0]
@@ -206,7 +208,7 @@ if __name__ == "__main__":
             
             xl = torch.cat([xl, x_r], dim=0)
 
-            zt = enc(xl)
+            zt = ema_enc(xl)
 
             st_lst = []
 
@@ -214,9 +216,9 @@ if __name__ == "__main__":
             for a in a_lst:
                 action = torch.Tensor(np.array(a)).cuda().unsqueeze(0)
                 action = torch.cat([action, a_r], dim=0)
-                st = a_probe(zt)
+                st = ema_a_probe(zt)
                 st_lst.append(st.data.cpu()[0:1])
-                zt = forward(zt, action)
+                zt = ema_forward(zt, action)
                 print('st', st[0:1])
                 print('action', a)
 
