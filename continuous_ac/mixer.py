@@ -2,6 +2,8 @@
 import torch
 import torch.nn as nn
 from torch.nn.modules.container import Sequential
+from pe import positionalencoding1d
+
 class ImageToPatches(nn.Module):
     def __init__(self, patch_size):
         super().__init__()
@@ -85,9 +87,13 @@ class MLP_Mixer(nn.Module):
         ])
         self.OutputMLP = OutputMLP(n_tokens, n_channel, n_output)
 
+        self.pe = positionalencoding1d(n_channel, n_tokens).cuda().unsqueeze(0)
+
     def forward(self, x):
         x = self.ImageToPatch(x)
         x = self.PerPatchMLP(x)
+        #pe_use = self.pe.repeat(x.shape[0], 1, 1)
+        #x += pe_use
         x = self.MixerStack(x)
         return self.OutputMLP(x)
 
