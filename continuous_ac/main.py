@@ -5,9 +5,11 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+
 from models import Encoder, Probe, AC, LatentForward
 import torch
 import numpy as np
+import random
 
 '''
 Sample 100k examples.  
@@ -28,7 +30,7 @@ bs_probe
 
 def sample_example(X, A, ast, est): 
     N = X.shape[0]
-    maxk = 5
+    maxk = 10 #5
     t = random.randint(0, N - maxk - 1)
     k = random.randint(1, maxk)
 
@@ -79,8 +81,8 @@ if __name__ == "__main__":
     from ema_pytorch import EMA
 
     ema_enc = EMA(enc, beta = 0.99)
-    ema_forward = EMA(forward, beta = 0.99)
-    ema_a_probe = EMA(a_probe.enc, beta = 0.99)
+    ema_forward = EMA(forward, beta = 0.99, update_after_step=5000)
+    ema_a_probe = EMA(a_probe.enc, beta = 0.99, update_after_step=5000)
 
     opt = torch.optim.Adam(list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()) + list(forward.parameters()))
 
@@ -90,7 +92,7 @@ if __name__ == "__main__":
     est = []
 
     import random
-    for i in range(0,500000):
+    for i in range(0,50000):
         a = env.random_action()
 
         x, agent_state, exo_state = env.get_obs()
@@ -109,28 +111,27 @@ if __name__ == "__main__":
 
 
     for j in range(0, 200000):
+        ac.train()
+        enc.train()
+        a_probe.train()
+        forward.train()
         xt, xtn, xtk, k, a, astate, estate = sample_batch(X, A, ast, est, 128)
         astate = torch.round(astate,decimals=3)
 
         #print('-----')
 
-        #print('encoding xt')
-        st = enc(xt)
-        #print('encoding xtk')
-        stk = enc(xtk)
+        xjoin = torch.cat([xt,xtn,xtk],dim=0)
+        sjoin = enc(xjoin)
+        st, stn, stk = torch.chunk(sjoin, 3, dim=0)
 
-        stn = ema_enc(xtn)
 
-        #print('xt-extract-0', (xt[0].reshape((100,100))==1).nonzero(as_tuple=True)[0])
+        #st = enc(xt)
+        #stk = enc(xtk)
+        #stn = enc(xtn)
 
-        #xl = xt[0].reshape((100,100))
-        #print(xl.argmax(dim=0), xl.argmax(dim=1))
-        #print('true state at t')
-        #print(astate[0])
-        #raise Exception('done')
 
         ac_loss = ac(st, stk, k, a)
-        ap_loss, ap_abserr = a_probe(st, astate)
+        ap_loss, ap_abserr = a_probe.loss(st, astate)
         ep_loss = ap_loss*0.0
 
         z_loss, z_pred = forward.loss(st, stn, a)
@@ -148,19 +149,19 @@ if __name__ == "__main__":
         ema_enc.update()
 
         if j % 100 == 0:
-            print(j, ac_loss.item(), 'A_loss', ap_abserr.item())
+            print(j, ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item())
 
             #print('forward test')
             #print('true[t]', astate[0])
             #print('s[t]', a_probe.enc(st)[0], 'a[t]', a[0])
             #print('s[t+1]', a_probe.enc(stn)[0], 'z[t+1]', a_probe.enc(z_pred)[0])
 
+        #ema_a_probe.eval()
+        #ema_forward.eval()
+        #ema_enc.eval()
 
 
         def vectorplot(a_use, name):
-            ema_a_probe.eval()
-            #ema_forward.eval()
-            #ema_enc.eval()
 
             #make grid
             action = []
@@ -172,13 +173,14 @@ if __name__ == "__main__":
                     x = env.synth_obs(ap=true_s)
                     xl.append(x)
 
+
             action = torch.Tensor(np.array(action)).cuda()
             xl = torch.Tensor(xl).cuda()
             print(xl.shape, action.shape)
-            zt = ema_enc(xl)
-            ztn = ema_forward(zt, action)
-            st_inf = ema_a_probe(zt)
-            stn_inf = ema_a_probe(ztn)
+            zt = enc(xl)
+            ztn = forward(zt, action)
+            st_inf = a_probe(zt)
+            stn_inf = a_probe(ztn)
             print('st', st_inf[30], 'stn', stn_inf[30])
 
             px = st_inf[:,0]
@@ -192,17 +194,11 @@ if __name__ == "__main__":
             
             plt.clf()
 
-            ema_a_probe.train()
-            #ema_forward.train()
-            #ema_enc.train()
 
             return xl, action
 
         def squareplot(x_r, a_r):
 
-            ema_a_probe.eval()
-            #ema_forward.eval()
-            #ema_enc.eval()
 
             true_s = [0.4,0.4]
             xl = env.synth_obs(ap=true_s)
@@ -210,7 +206,7 @@ if __name__ == "__main__":
             
             xl = torch.cat([xl, x_r], dim=0)
 
-            zt = ema_enc(xl)
+            zt = enc(xl)
 
             st_lst = []
 
@@ -218,9 +214,9 @@ if __name__ == "__main__":
             for a in a_lst:
                 action = torch.Tensor(np.array(a)).cuda().unsqueeze(0)
                 action = torch.cat([action, a_r], dim=0)
-                st = ema_a_probe(zt)
+                st = a_probe(zt)
                 st_lst.append(st.data.cpu()[0:1])
-                zt = ema_forward(zt, action)
+                zt = forward(zt, action)
                 print('st', st[0:1])
                 print('action', a)
 
@@ -237,9 +233,6 @@ if __name__ == "__main__":
             plt.savefig('vectorfield_plan.png')
             plt.clf()
 
-            ema_a_probe.train()
-            #ema_forward.train()
-            #ema_enc.train()
 
 
         if True and j % 1000 == 0:

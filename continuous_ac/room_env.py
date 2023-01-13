@@ -13,6 +13,8 @@
 
 import numpy as np
 import random
+import torchvision.transforms.functional as F
+import torch
 
 def div_cast(x, m=100):
     for i in range(len(x)):
@@ -56,10 +58,18 @@ class RoomEnv:
 
         self.agent_pos = div_cast(self.agent_pos)[:]
 
+    def blur_obs(self, x):
+        x = torch.Tensor(x).unsqueeze(0).unsqueeze(0)
+        x = F.gaussian_blur(x,7)*16
+        x = x.squeeze(0).squeeze(0).numpy()
+        return x
+
     def synth_obs(self, ap):
         x = np.zeros(shape=(100, 100))
 
         x[int(round(ap[0]*100)), int(round(ap[1]*100))] += 1
+
+        #x = self.blur_obs(x)
 
         return x.flatten()
 
@@ -67,6 +77,8 @@ class RoomEnv:
         x = np.zeros(shape=(100, 100))
 
         x[int(round(self.agent_pos[0]*100)), int(round(self.agent_pos[1]*100))] += 1
+
+        #x = self.blur_obs(x)
 
         #x = np.concatenate([x, self.exo.reshape((self.m,self.m))], axis=1)
 
