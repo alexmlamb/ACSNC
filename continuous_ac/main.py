@@ -338,6 +338,6 @@ if __name__ == '__main__':
                     marker='.')
         plt.savefig('latent_cluster.png')
         if args.use_wandb:
-            wandb.log({'latent-cluster', wandb.Image("latent_cluster.png")})
+            wandb.log({'latent-cluster': wandb.Image("latent_cluster.png")})
     else:
         raise ValueError()
