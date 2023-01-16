@@ -310,7 +310,7 @@ if __name__ == '__main__':
     elif args.opr == 'cluster-latent':
 
         # load model
-        model = torch.load('model.p')
+        model = torch.load('model.p', map_location=torch.device('cpu'))
         ac.load_state_dict(model['ac'])
         enc.load_state_dict(model['enc'])
         a_probe.load_state_dict(model['a_probe'])
