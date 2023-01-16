@@ -11,6 +11,7 @@ import numpy as np
 import pickle
 from tqdm import tqdm
 from sklearn.cluster import KMeans
+import wandb
 
 '''
 Sample 100k examples.  
@@ -91,9 +92,9 @@ if __name__ == '__main__':
 
     # wandb init
     if args.use_wandb:
-        import wandb
-
         wandb.init(project=args.wandb_project_name, save_code=True)
+        wandb.config.update({x.dest: vars(args)[x.dest]
+                             for x in train_args._group_actions})
 
     # Train
     env = RoomEnv()
