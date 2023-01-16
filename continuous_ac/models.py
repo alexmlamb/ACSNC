@@ -126,6 +126,11 @@ class Encoder(nn.Module):
 
         return self.m(h)
 
+    def to(self, device):
+        self.m = self.m.to(device)
+        self.mixer = self.mixer.to(device)
+        return self
+
 
 class Probe(nn.Module):
     def __init__(self, din, dout):

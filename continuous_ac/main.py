@@ -26,16 +26,15 @@ bs_probe
 '''
 
 
-def sample_example(X, A, ast, est):
+def sample_example(X, A, ast, est, max_k=5):
     N = X.shape[0]
-    maxk = 5
-    t = random.randint(0, N - maxk - 1)
-    k = random.randint(1, maxk)
+    t = random.randint(0, N - max_k - 1)
+    k = random.randint(1, max_k)
 
     return (X[t], X[t + 1], X[t + k], k, A[t], ast[t], est[t])
 
 
-def sample_batch(X, A, ast, est, bs):
+def sample_batch(X, A, ast, est, bs, max_k=5):
     xt = []
     xtn = []
     xtk = []
@@ -45,7 +44,7 @@ def sample_batch(X, A, ast, est, bs):
     alst = []
 
     for b in range(bs):
-        lst = sample_example(X, A, ast, est)
+        lst = sample_example(X, A, ast, est, max_k=max_k)
         xt.append(lst[0])
         xtn.append(lst[1])
         xtk.append(lst[2])
@@ -74,6 +73,11 @@ if __name__ == '__main__':
                             help='name of the wandb project')
     wandb_args.add_argument('--use-wandb', action='store_true',
                             help='use Weight and bias visualization lib')
+    # training args
+    train_args = parser.add_argument_group('wandb setup')
+    train_args.add_argument("--latent-dim", default=256, type=int)
+    train_args.add_argument("--k_embedding_dim", default=45, type=int)
+    train_args.add_argument("--max_k", default=5, type=int)
 
     # process arguments
     args = parser.parse_args()
@@ -88,12 +92,12 @@ if __name__ == '__main__':
     # Train
     env = RoomEnv()
 
-    ac = AC(256, nk=45, nact=2).to(device)
-    enc = Encoder(100 * 100, 256).to(device)
-    forward = LatentForward(256, 2).to(device)
-    a_probe = Probe(256, 2).to(device)
-    b_probe = Probe(256, 2).to(device)
-    e_probe = Probe(256, 2).to(device)
+    ac = AC(din=args.latent_dim, nk=args.k_embedding_dim, nact=2).to(device)
+    enc = Encoder(100 * 100, args.latent_dim).to(device)
+    forward = LatentForward(args.latent_dim, 2).to(device)
+    a_probe = Probe(args.latent_dim, 2).to(device)
+    b_probe = Probe(args.latent_dim, 2).to(device)
+    e_probe = Probe(args.latent_dim, 2).to(device)
 
     from ema_pytorch import EMA
 
@@ -101,9 +105,11 @@ if __name__ == '__main__':
     ema_forward = EMA(forward, beta=0.99)
     ema_a_probe = EMA(a_probe.enc, beta=0.99)
 
-    opt = torch.optim.Adam(
-        list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()) + list(
-            forward.parameters()))
+    opt = torch.optim.Adam(list(ac.parameters())
+                           + list(enc.parameters())
+                           + list(a_probe.parameters())
+                           + list(b_probe.parameters())
+                           + list(forward.parameters()))
 
     X = []
     A = []
@@ -133,7 +139,7 @@ if __name__ == '__main__':
         enc.train()
         a_probe.train()
         forward.train()
-        xt, xtn, xtk, k, a, astate, estate = sample_batch(X, A, ast, est, 128)
+        xt, xtn, xtk, k, a, astate, estate = sample_batch(X, A, ast, est, 128, max_k=args.max_k)
         astate = torch.round(astate, decimals=3)
 
         # print('-----')
@@ -266,12 +272,13 @@ if __name__ == '__main__':
 
             squareplot(x_r, a_r)
 
-            wandb.log({
-                'vectorfields/down': wandb.Image("vectorfield_down.png"),
-                'vectorfields/up': wandb.Image("vectorfield_up.png"),
-                'vectorfields/left': wandb.Image("vectorfield_left.png"),
-                'vectorfields/right': wandb.Image("vectorfield_right.png"),
-                'vectorfields/up-right': wandb.Image("vectorfield_up-right.png"),
-                'vectorfields/plan': wandb.Image("vectorfield_plan.png"),
-                'update': j
-            })
+            if args.use_wandb:
+                wandb.log({
+                    'vectorfields/down': wandb.Image("vectorfield_down.png"),
+                    'vectorfields/up': wandb.Image("vectorfield_up.png"),
+                    'vectorfields/left': wandb.Image("vectorfield_left.png"),
+                    'vectorfields/right': wandb.Image("vectorfield_right.png"),
+                    'vectorfields/up-right': wandb.Image("vectorfield_up-right.png"),
+                    'vectorfields/plan': wandb.Image("vectorfield_plan.png"),
+                    'update': j
+                })

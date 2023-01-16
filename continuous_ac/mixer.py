@@ -87,7 +87,7 @@ class MLP_Mixer(nn.Module):
         ])
         self.OutputMLP = OutputMLP(n_tokens, n_channel, n_output)
 
-        self.pe = positionalencoding1d(n_channel, n_tokens).cuda().unsqueeze(0)
+        self.pe = positionalencoding1d(n_channel, n_tokens).unsqueeze(0)
 
     def forward(self, x):
         x = self.ImageToPatch(x)
@@ -97,6 +97,13 @@ class MLP_Mixer(nn.Module):
         x = self.MixerStack(x)
         return self.OutputMLP(x)
 
+    def to(self, device):
+        self.ImageToPatch = self.ImageToPatch.to(device)
+        self.PerPatchMLP = self.PerPatchMLP.to(device)
+        self.MixerStack = self.MixerStack.to(device)
+        self.OutputMLP = self.OutputMLP.to(device)
+        self.pe = self.pe.to(device)
+        return self
 
 
 
