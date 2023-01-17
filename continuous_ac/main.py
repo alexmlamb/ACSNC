@@ -342,6 +342,11 @@ if __name__ == '__main__':
                     c=predicted_labels,
                     marker='.')
         plt.savefig('latent_cluster.png')
+        plt.clf()
+        plt.scatter(x=grounded_states[:, 0],
+                    y=predicted_grounded_states[:, 0],
+                    marker='.')
+        plt.savefig('ground_vs_predicted_state.png')
         if args.use_wandb:
             wandb.log({'latent-cluster': wandb.Image("latent_cluster.png")})
     else:
