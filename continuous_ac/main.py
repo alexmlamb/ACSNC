@@ -314,6 +314,8 @@ if __name__ == '__main__':
         model = torch.load('model.p', map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         a_probe.load_state_dict(model['a_probe'])
+        enc.eval()
+        a_probe.eval()
 
         # load-dataset
         dataset = pickle.load(open('dataset.p', 'rb'))
@@ -325,8 +327,8 @@ if __name__ == '__main__':
         for i in range(0, 100000, 256):
             with torch.no_grad():
                 _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
-                predicted_grounded_states += a_probe(_latent_state).cpu().numpy().tolist()
                 latent_states += _latent_state.cpu().numpy().tolist()
+                predicted_grounded_states += a_probe(_latent_state).cpu().numpy().tolist()
 
         predicted_grounded_states = np.array(predicted_grounded_states)
         grounded_states = np.array(ast[:len(latent_states)])
@@ -348,6 +350,8 @@ if __name__ == '__main__':
                     marker='.')
         plt.savefig('ground_vs_predicted_state.png')
         if args.use_wandb:
-            wandb.log({'latent-cluster': wandb.Image("latent_cluster.png")})
+            wandb.log({'latent-cluster': wandb.Image("latent_cluster.png"),
+                       'grounded-vs-predicted-state':
+                           wandb.Image("ground_vs_predicted_state.png")})
     else:
         raise ValueError()
