@@ -320,20 +320,23 @@ if __name__ == '__main__':
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
         # generate latent-states and ground them
-        predicted_grounded_state = []
+        latent_states = []
+        predicted_grounded_states = []
         for i in range(0, 100000, 256):
             with torch.no_grad():
-                predicted_grounded_state += a_probe(enc(torch.FloatTensor(X[i:i + 256])
-                                                        .to(device))).cpu().numpy().tolist()
-        predicted_grounded_state = np.array(predicted_grounded_state)
+                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
+                latent_states += _latent_state.cpu().numpy().tolist()
+                predicted_grounded_states += a_probe(_latent_state).cpu().numpy().tolist()
+        predicted_grounded_states = np.array(predicted_grounded_states)
+        latent_states = np.array(latent_states)
 
         # clustering
-        kmeans = KMeans(n_clusters=50, random_state=0, n_init="auto").fit(predicted_grounded_state)
-        predicted_labels = kmeans.predict(predicted_grounded_state)
+        kmeans = KMeans(n_clusters=50, random_state=0, n_init="auto").fit(latent_states)
+        predicted_labels = kmeans.predict(latent_states)
 
         # visualize and save
-        plt.scatter(x=predicted_grounded_state[:, 0],
-                    y=predicted_grounded_state[:, 1],
+        plt.scatter(x=predicted_grounded_states[:, 0],
+                    y=predicted_grounded_states[:, 1],
                     c=predicted_labels,
                     marker='.')
         plt.savefig('latent_cluster.png')
