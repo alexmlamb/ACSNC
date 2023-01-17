@@ -326,8 +326,10 @@ if __name__ == '__main__':
             with torch.no_grad():
                 _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                 predicted_grounded_states += a_probe(_latent_state).cpu().numpy().tolist()
+                latent_states += _latent_state.cpu().numpy().tolist()
+
         predicted_grounded_states = np.array(predicted_grounded_states)
-        grounded_states = ast[:len(latent_states)]
+        grounded_states = np.array(ast[:len(latent_states)])
         latent_states = np.array(latent_states)
 
         # clustering
