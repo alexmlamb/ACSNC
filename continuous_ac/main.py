@@ -307,11 +307,11 @@ if __name__ == '__main__':
                             'a_probe': a_probe.state_dict(),
                             'b_probe': b_probe.state_dict(),
                             'e_probe': e_probe.state_dict()}, 'model.p')
+
     elif args.opr == 'cluster-latent':
 
         # load model
         model = torch.load('model.p', map_location=torch.device('cpu'))
-        ac.load_state_dict(model['ac'])
         enc.load_state_dict(model['enc'])
         a_probe.load_state_dict(model['a_probe'])
 
