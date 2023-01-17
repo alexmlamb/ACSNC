@@ -325,9 +325,9 @@ if __name__ == '__main__':
         for i in range(0, 100000, 256):
             with torch.no_grad():
                 _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
-                latent_states += _latent_state.cpu().numpy().tolist()
                 predicted_grounded_states += a_probe(_latent_state).cpu().numpy().tolist()
         predicted_grounded_states = np.array(predicted_grounded_states)
+        grounded_states = ast[:len(latent_states)]
         latent_states = np.array(latent_states)
 
         # clustering
@@ -335,8 +335,8 @@ if __name__ == '__main__':
         predicted_labels = kmeans.predict(latent_states)
 
         # visualize and save
-        plt.scatter(x=predicted_grounded_states[:, 0],
-                    y=predicted_grounded_states[:, 1],
+        plt.scatter(x=grounded_states[:, 0],
+                    y=grounded_states[:, 1],
                     c=predicted_labels,
                     marker='.')
         plt.savefig('latent_cluster.png')
