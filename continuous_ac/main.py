@@ -356,6 +356,7 @@ if __name__ == '__main__':
                        'grounded-vs-predicted-state':
                            wandb.Image("ground_vs_predicted_state.png")})
 
+
     elif args.opr == 'generate-mdp':
         # load model
         model = torch.load('model.p', map_location=torch.device('cpu'))
