@@ -356,7 +356,6 @@ if __name__ == '__main__':
                        'grounded-vs-predicted-state':
                            wandb.Image("ground_vs_predicted_state.png")})
 
-
     elif args.opr == 'generate-mdp':
         # load model
         model = torch.load('model.p', map_location=torch.device('cpu'))
@@ -378,13 +377,14 @@ if __name__ == '__main__':
                 latent_states += _latent_state.cpu().numpy().tolist()
                 states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
 
-        emprical_mdp = EmpiricalMDP(state=np.array(states_label)[:-1],
-                                    action=A[:-1],
-                                    next_state=np.array(states_label)[1:],
-                                    reward=np.zeros_like(A[:-1]))
-        transition_img = emprical_mdp.visualize_transition(save_path='transition_img.png')
+        empirical_mdp = EmpiricalMDP(state=np.array(states_label)[:-1],
+                                     action=A[:-1],
+                                     next_state=np.array(states_label)[1:],
+                                     reward=np.zeros_like(A[:-1]))
+        transition_img = empirical_mdp.visualize_transition(save_path='transition_img.png')
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image("transition_img.png")})
+        pickle.dump(empirical_mdp, open('empirical_mdp.p'))
 
     else:
         raise ValueError()
