@@ -145,7 +145,9 @@ if __name__ == '__main__':
                                + list(b_probe.parameters())
                                + list(forward.parameters()), lr=0.0001)
 
-        kmeans = KMeans(n_clusters=20).fit(A)
+        print('Run K-mneas')
+        kmeans = KMeans(n_clusters=20, verbose=1).fit(A)
+        print(' K-Means done')
 
         A = np.concatenate([A, kmeans.labels_.reshape((A.shape[0], 1))], axis=1)
 
@@ -188,127 +190,127 @@ if __name__ == '__main__':
             ema_a_probe.update()
             ema_enc.update()
 
-        if j % 100 == 0:
-            print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss', z_loss.item())
-            if args.use_wandb:
-                wandb.log(
-                    {'update': j,
-                     'ac-loss': ac_loss.item(),
-                     'a-loss': ap_abserr.item(),
-                     'asqr-loss': ap_loss.item()})
+            if j % 100 == 0:
+                print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss', z_loss.item())
+                if args.use_wandb:
+                    wandb.log(
+                        {'update': j,
+                         'ac-loss': ac_loss.item(),
+                         'a-loss': ap_abserr.item(),
+                         'asqr-loss': ap_loss.item()})
 
-                # print('forward test')
-                # print('true[t]', astate[0])
-                # print('s[t]', a_probe.enc(st)[0], 'a[t]', a[0])
-                # print('s[t+1]', a_probe.enc(stn)[0], 'z[t+1]', a_probe.enc(z_pred)[0])
+                    # print('forward test')
+                    # print('true[t]', astate[0])
+                    # print('s[t]', a_probe.enc(st)[0], 'a[t]', a[0])
+                    # print('s[t+1]', a_probe.enc(stn)[0], 'z[t+1]', a_probe.enc(z_pred)[0])
 
-        ema_a_probe.eval()
-        ema_forward.eval()
-        ema_enc.eval()
+            ema_a_probe.eval()
+            ema_forward.eval()
+            ema_enc.eval()
 
-        def vectorplot(a_use, name):
+            def vectorplot(a_use, name):
 
-            # make grid
-            action = []
-            xl = []
-            for a in range(2, 99, 5):
-                for b in range(2, 99, 10):
-                    action.append(a_use)
-                    true_s = [a * 1.0 / 100, b * 1.0 / 100]
-                    x = env.synth_obs(ap=true_s)
-                    xl.append(x)
+                # make grid
+                action = []
+                xl = []
+                for a in range(2, 99, 5):
+                    for b in range(2, 99, 10):
+                        action.append(a_use)
+                        true_s = [a * 1.0 / 100, b * 1.0 / 100]
+                        x = env.synth_obs(ap=true_s)
+                        xl.append(x)
 
-            action = torch.Tensor(np.array(action)).to(device)
-            xl = torch.Tensor(xl).to(device)
-            print(xl.shape, action.shape)
-            zt = ema_enc(xl)
-            ztn = ema_forward(zt, action)
-            st_inf = ema_a_probe(zt)
-            stn_inf = ema_a_probe(ztn)
-            print('st', st_inf[30], 'stn', stn_inf[30])
+                action = torch.Tensor(np.array(action)).to(device)
+                xl = torch.Tensor(xl).to(device)
+                print(xl.shape, action.shape)
+                zt = ema_enc(xl)
+                ztn = ema_forward(zt, action)
+                st_inf = ema_a_probe(zt)
+                stn_inf = ema_a_probe(ztn)
+                print('st', st_inf[30], 'stn', stn_inf[30])
 
-            px = st_inf[:, 0]
-            py = stn_inf[:, 1]
-            pu = stn_inf[:, 0] - st_inf[:, 0]
-            pv = stn_inf[:, 1] - st_inf[:, 1]
+                px = st_inf[:, 0]
+                py = stn_inf[:, 1]
+                pu = stn_inf[:, 0] - st_inf[:, 0]
+                pv = stn_inf[:, 1] - st_inf[:, 1]
 
-            plt.quiver(px.data.cpu(), py.data.cpu(), 0.5 * pu.data.cpu(), 0.5 * pv.data.cpu())
-            plt.title(name + " " + str(a_use))
-            plt.savefig('vectorfield_%s.png' % name)
+                plt.quiver(px.data.cpu(), py.data.cpu(), 0.5 * pu.data.cpu(), 0.5 * pv.data.cpu())
+                plt.title(name + " " + str(a_use))
+                plt.savefig('vectorfield_%s.png' % name)
 
-            plt.clf()
+                plt.clf()
 
-            return xl, action
-
-
-        def squareplot(x_r, a_r):
-
-            true_s = [0.4, 0.4]
-            xl = env.synth_obs(ap=true_s)
-            xl = torch.Tensor(xl).to(device).unsqueeze(0)
-
-            xl = torch.cat([xl, x_r], dim=0)
-
-            zt = ema_enc(xl)
-
-            st_lst = []
-
-            a_lst = [[0.1, 0.0], [0.1, 0.0], [0.0, 0.1], [0.0, 0.1], [-0.1, 0.0], [-0.1, 0.0], [0.0, -0.1],
-                     [0.0, -0.1],
-                     [0.0, 0.0], [0.0, 0.0]]
-            for a in a_lst:
-                action = torch.Tensor(np.array(a)).to(device).unsqueeze(0)
-                action = torch.cat([action, a_r], dim=0)
-                st = ema_a_probe(zt)
-                st_lst.append(st.data.cpu()[0:1])
-                zt = ema_forward(zt, action)
-                print('st', st[0:1])
-                print('action', a)
-
-            st_lst = torch.cat(st_lst, dim=0)
-
-            true_sq = np.array(
-                [[0.4, 0.4], [0.5, 0.4], [0.6, 0.4], [0.6, 0.5], [0.6, 0.6], [0.5, 0.6], [0.4, 0.6], [0.4, 0.5],
-                 [0.4, 0.4], [0.4, 0.4]])
-
-            plt.plot(st_lst[:, 0].numpy(), st_lst[:, 1].numpy())
-            plt.plot(true_sq[:, 0], true_sq[:, 1])
-            plt.ylim(0, 1)
-            plt.xlim(0, 1)
-
-            plt.title("Square Plan")
-            plt.savefig('vectorfield_plan.png')
-            plt.clf()
+                return xl, action
 
 
-        if True and j % 1000 == 0:
-            vectorplot([0.0, 0.1], 'up')
-            vectorplot([0.0, -0.1], 'down')
-            vectorplot([-0.1, 0.0], 'left')
-            vectorplot([0.1, 0.0], 'right')
-            vectorplot([0.1, 0.1], 'up-right')
-            x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
+            def squareplot(x_r, a_r):
 
-            squareplot(x_r, a_r)
+                true_s = [0.4, 0.4]
+                xl = env.synth_obs(ap=true_s)
+                xl = torch.Tensor(xl).to(device).unsqueeze(0)
 
-            if args.use_wandb:
-                wandb.log({
-                    'vectorfields/down': wandb.Image("vectorfield_down.png"),
-                    'vectorfields/up': wandb.Image("vectorfield_up.png"),
-                    'vectorfields/left': wandb.Image("vectorfield_left.png"),
-                    'vectorfields/right': wandb.Image("vectorfield_right.png"),
-                    'vectorfields/up-right': wandb.Image("vectorfield_up-right.png"),
-                    'vectorfields/plan': wandb.Image("vectorfield_plan.png"),
-                    'update': j
-                })
+                xl = torch.cat([xl, x_r], dim=0)
 
-            # save
-            torch.save({'ac': ac.state_dict(),
-                        'enc': enc.state_dict(),
-                        'forward': forward.state_dict(),
-                        'a_probe': a_probe.state_dict(),
-                        'b_probe': b_probe.state_dict(),
-                        'e_probe': e_probe.state_dict()}, 'model.p')
+                zt = ema_enc(xl)
+
+                st_lst = []
+
+                a_lst = [[0.1, 0.0], [0.1, 0.0], [0.0, 0.1], [0.0, 0.1], [-0.1, 0.0], [-0.1, 0.0], [0.0, -0.1],
+                         [0.0, -0.1],
+                         [0.0, 0.0], [0.0, 0.0]]
+                for a in a_lst:
+                    action = torch.Tensor(np.array(a)).to(device).unsqueeze(0)
+                    action = torch.cat([action, a_r], dim=0)
+                    st = ema_a_probe(zt)
+                    st_lst.append(st.data.cpu()[0:1])
+                    zt = ema_forward(zt, action)
+                    print('st', st[0:1])
+                    print('action', a)
+
+                st_lst = torch.cat(st_lst, dim=0)
+
+                true_sq = np.array(
+                    [[0.4, 0.4], [0.5, 0.4], [0.6, 0.4], [0.6, 0.5], [0.6, 0.6], [0.5, 0.6], [0.4, 0.6], [0.4, 0.5],
+                     [0.4, 0.4], [0.4, 0.4]])
+
+                plt.plot(st_lst[:, 0].numpy(), st_lst[:, 1].numpy())
+                plt.plot(true_sq[:, 0], true_sq[:, 1])
+                plt.ylim(0, 1)
+                plt.xlim(0, 1)
+
+                plt.title("Square Plan")
+                plt.savefig('vectorfield_plan.png')
+                plt.clf()
+
+
+            if True and j % 1000 == 0:
+                vectorplot([0.0, 0.1], 'up')
+                vectorplot([0.0, -0.1], 'down')
+                vectorplot([-0.1, 0.0], 'left')
+                vectorplot([0.1, 0.0], 'right')
+                vectorplot([0.1, 0.1], 'up-right')
+                x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
+
+                squareplot(x_r, a_r)
+
+                if args.use_wandb:
+                    wandb.log({
+                        'vectorfields/down': wandb.Image("vectorfield_down.png"),
+                        'vectorfields/up': wandb.Image("vectorfield_up.png"),
+                        'vectorfields/left': wandb.Image("vectorfield_left.png"),
+                        'vectorfields/right': wandb.Image("vectorfield_right.png"),
+                        'vectorfields/up-right': wandb.Image("vectorfield_up-right.png"),
+                        'vectorfields/plan': wandb.Image("vectorfield_plan.png"),
+                        'update': j
+                    })
+
+                # save
+                torch.save({'ac': ac.state_dict(),
+                            'enc': enc.state_dict(),
+                            'forward': forward.state_dict(),
+                            'a_probe': a_probe.state_dict(),
+                            'b_probe': b_probe.state_dict(),
+                            'e_probe': e_probe.state_dict()}, 'model.p')
 
     elif args.opr == 'cluster-latent':
 
