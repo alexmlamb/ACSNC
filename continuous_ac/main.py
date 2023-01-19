@@ -374,14 +374,14 @@ if __name__ == '__main__':
         latent_states, states_label = [], []
         for i in range(0, len(X), 256):
             with torch.no_grad():
-                _latent_state = enc(torch.FloatTensor(X[i:i + 256 + 1]).to(device))
+                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                 latent_states += _latent_state.cpu().numpy().tolist()
                 states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
 
-        emprical_mdp = EmpiricalMDP(state=np.array(states_label[:-1]),
-                                    action=A,
-                                    next_state=np.array(states_label[1:]),
-                                    reward=np.zeros_like(A))
+        emprical_mdp = EmpiricalMDP(state=np.array(states_label)[:-1],
+                                    action=A[:-1],
+                                    next_state=np.array(states_label)[1:],
+                                    reward=np.zeros_like(A[:-1]))
         transition_img = emprical_mdp.visualize_transition(save_path='transition_img.png')
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image("transition_img.png")})
