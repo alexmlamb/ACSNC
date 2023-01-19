@@ -1,7 +1,6 @@
 
-
 from block_pull_env import BlockEnv
-#from block_push_env import BlockEnv
+# from block_push_env import BlockEnv
 
 
 from models import Encoder, Probe, AC
@@ -25,13 +24,13 @@ bs_probe
 
 '''
 
-def sample_example(X, A, ast, bst, est): 
+def sample_example(X, A, ast, bst, est):
     N = X.shape[0]
     maxk = 40
     t = random.randint(0, N - maxk - 1)
     k = random.randint(1, maxk)
 
-    return (X[t], X[t+k], k, A[t], ast[t], bst[t], est[t])
+    return (X[t], X[ t +k], k, A[t], ast[t], bst[t], est[t])
 
 def sample_batch(X, A, ast, bst, est, bs):
 
@@ -69,12 +68,13 @@ if __name__ == "__main__":
     env = BlockEnv()
 
     ac = AC(256, nk=45, nact=5).cuda()
-    enc = Encoder(env.m**2 * 2, 256).cuda()
-    a_probe = Probe(256, env.m**2).cuda()
-    b_probe = Probe(256, env.m**2).cuda()
-    e_probe = Probe(256, env.m**2).cuda()
+    enc = Encoder(env. m* *2 * 2, 256).cuda()
+    a_probe = Probe(256, env. m* *2).cuda()
+    b_probe = Probe(256, env. m* *2).cuda()
+    e_probe = Probe(256, env. m* *2).cuda()
 
-    opt = torch.optim.Adam(list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()))
+    opt = torch.optim.Adam \
+        (list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()))
 
     X = []
     A = []
@@ -83,9 +83,9 @@ if __name__ == "__main__":
     est = []
 
     import random
-    for i in range(0,500000):
-        a = random.randint(0,4)
-        #env.render()
+    for i in range(0 ,500000):
+        a = random.randint(0 ,4)
+        # env.render()
 
         x, agent_state, block_state, exo_state = env.get_obs()
         env.step(a)
@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
         opt.step()
         opt.zero_grad()
-        
+
         if j % 100 == 0:
             print(j, ac_loss.item(), 'A_acc', ap_acc.item(), 'B_acc', bp_acc.item(), 'E_acc', ep_acc.item())
 
