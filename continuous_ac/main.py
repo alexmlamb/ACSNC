@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+from sklearn.cluster import KMeans
 
 from models import Encoder, Probe, AC, LatentForward
 import torch
@@ -30,7 +31,9 @@ bs_probe
 
 def sample_example(X, A, ast, est): 
     N = X.shape[0]
-    maxk = 5 #5
+    
+    maxk = 2
+
     t = random.randint(0, N - maxk - 1)
     k = random.randint(1, maxk)
 
@@ -73,6 +76,7 @@ if __name__ == "__main__":
 
     ac = AC(256, nk=45, nact=2).cuda()
     enc = Encoder(100*100, 256).cuda()
+
     forward = LatentForward(256, 2).cuda()
     a_probe = Probe(256, 2).cuda()
     b_probe = Probe(256, 2).cuda()
@@ -84,7 +88,7 @@ if __name__ == "__main__":
     ema_forward = EMA(forward, beta = 0.99)
     ema_a_probe = EMA(a_probe.enc, beta = 0.99)
 
-    opt = torch.optim.Adam(list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()) + list(forward.parameters()))
+    opt = torch.optim.Adam(list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()) + list(forward.parameters()), lr=0.0001)
 
     X = []
     A = []
@@ -109,6 +113,11 @@ if __name__ == "__main__":
     ast = np.array(ast).astype('float32')
     est = np.array(est).astype('float32')
 
+    
+    kmeans = KMeans(n_clusters=20).fit(A)
+
+    A = np.concatenate([A, kmeans.labels_.reshape((A.shape[0],1))],axis=1)
+
 
     for j in range(0, 200000):
         ac.train()
@@ -118,19 +127,13 @@ if __name__ == "__main__":
         xt, xtn, xtk, k, a, astate, estate = sample_batch(X, A, ast, est, 128)
         astate = torch.round(astate,decimals=3)
 
-        #print('-----')
 
-        #xjoin = torch.cat([xt,xtn,xtk],dim=0)
-        #sjoin = enc(xjoin)
-        #st, stn, stk = torch.chunk(sjoin, 3, dim=0)
+        do_bn = (j < 5000)
 
+        st = enc(xt, do_bn)
+        stk = enc(xtk, do_bn)
 
-        st = enc(xt)
-        stk = enc(xtk)
-        
-
-        stn = ema_enc(xtn)
-
+        stn = enc(xtn, do_bn)
 
         ac_loss = ac(st, stk, k, a)
         ap_loss, ap_abserr = a_probe.loss(st, astate)
@@ -141,8 +144,8 @@ if __name__ == "__main__":
         #raise Exception()
 
         loss = ac_loss + ap_loss + ep_loss + z_loss
-        loss.backward()
 
+        loss.backward()
         opt.step()
         opt.zero_grad()
         
@@ -151,7 +154,7 @@ if __name__ == "__main__":
         ema_enc.update()
 
         if j % 100 == 0:
-            print(j, ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item())
+            print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss', z_loss.item())
 
             #print('forward test')
             #print('true[t]', astate[0])
@@ -159,7 +162,7 @@ if __name__ == "__main__":
             #print('s[t+1]', a_probe.enc(stn)[0], 'z[t+1]', a_probe.enc(z_pred)[0])
 
         ema_a_probe.eval()
-        #ema_forward.eval()
+        ema_forward.eval()
         #ema_enc.eval()
 
 

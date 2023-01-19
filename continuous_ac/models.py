@@ -8,6 +8,7 @@ from noise import noised
 import numpy as np
 
 from vit import ViT
+import random
 
 #from batchrenorm import BatchRenorm1d
 
@@ -44,14 +45,26 @@ class AC(nn.Module):
         super().__init__()
 
         self.kemb = nn.Embedding(nk, din)
+        self.cemb = nn.Embedding(150, din)
 
-        self.m = nn.Sequential(nn.Linear(din*3, 256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256,256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256, nact))
-        #self.m = nn.Sequential(nn.Linear(din*3, 512), ResMLP(512), ResMLP(512), nn.Linear(512, nact))
+        #self.m = nn.Sequential(nn.Linear(din*3, 256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256,256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256, 256))
+        self.m = nn.Sequential(nn.Linear(din*3, 256), ResMLP(256), ResMLP(256))
 
-        #self.yl = nn.Linear(2,din)
-        #self.tl = GaussianFourierProjectionTime(din//2)
+        #self.m_cond = nn.Sequential(nn.Linear(din*4, 256), ResMLP(256), ResMLP(256))
+
+        self.acont_pred = nn.Linear(256, nact)
+        self.adisc_pred = nn.Linear(256, 150)
+
+        self.yl = nn.Sequential(nn.Linear(2,din), nn.Tanh(), nn.Linear(din,din))
+        self.tl = GaussianFourierProjectionTime(din//2)
 
     def forward(self, st, stk, k, a): 
+
+        loss = 0.0
+
+        a_cont = a[:,:2]
+        a_disc = a[:,2].long()
+
 
         #noise_t = torch.rand_like(a[:,0])
         #noised_a,_,_ = noised(a, noise_t)
@@ -64,25 +77,68 @@ class AC(nn.Module):
 
         h = self.m(h)
 
+        acont_p = self.acont_pred(h)
+        adisc_p = self.adisc_pred(h)
 
-        loss = ((h - a)**2).mean(dim=-1).sum()
+        loss += ((acont_p - a_cont)**2).sum(dim=-1).mean() * 10.0
+
+        loss += 0.01 * ce(adisc_p, a_disc)
 
         return loss
 
 class LatentForward(nn.Module):
     def __init__(self, dim, nact):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(dim+nact, 256), nn.LeakyReLU(), nn.Linear(256, 256), nn.LeakyReLU(), nn.Linear(256, dim))
+        self.alin = nn.Sequential(nn.Linear(nact, dim))
+        self.net = nn.Sequential(nn.Linear(dim + nact, 512), nn.LeakyReLU(), nn.Linear(512, 512), nn.LeakyReLU(), nn.Linear(512, dim))
+        #self.net = nn.Sequential(ResMLP(512), ResMLP(512), nn.Linear(512, dim))
+
+        if True:
+            self.prior = nn.Sequential(nn.Linear(dim + nact, 512), nn.LayerNorm(512), nn.LeakyReLU(), nn.Linear(512,512))
+            self.posterior = nn.Sequential(nn.Linear(dim*2 + nact, 512), nn.LayerNorm(512), nn.LeakyReLU(), nn.Linear(512,512))
+            self.decoder = nn.Sequential(nn.Linear(dim + nact + 256, 512), nn.LeakyReLU(), nn.Linear(512,512), nn.LeakyReLU(), nn.Linear(512,dim))
 
     def forward(self, z, a):
-        return self.net(torch.cat([z.detach(),a],dim=1))
+        a = a[:,:2]
+        zc = torch.cat([z.detach(),a], dim=1)
+
+        if True:
+            mu_prior, std_prior = torch.chunk(self.prior(zc), 2, dim=1)
+            std_prior = torch.exp(std_prior) * 0.001 + 1e-5
+            prior = torch.distributions.normal.Normal(mu_prior, std_prior)
+            sample = prior.rsample()
+            zpred = self.decoder(torch.cat([zc, sample], dim=1))
+        else:
+            zpred = self.net(zc)
+
+        return zpred
 
     def loss(self, z, zn, a):
-        zn = zn.detach()
+        a = a[:,:2]
 
-        zpred = self.net(torch.cat([z.detach(), a.detach()],dim=1))
+        #zn = zn.detach()
 
-        loss = ((zn - zpred)**2).mean(dim=-1).sum()
+        zc = torch.cat([z,a], dim=1)
+        zpred = self.net(zc)
+
+        loss = 0.0
+
+        if True:
+            mu_prior, std_prior = torch.chunk(self.prior(zc.detach()), 2, dim=1)
+            mu_posterior, std_posterior = torch.chunk(self.posterior(torch.cat([zc.detach(), zn.detach()], dim=1)), 2, dim=1)
+            std_prior = torch.exp(std_prior)
+            std_posterior = torch.exp(std_posterior)
+            prior = torch.distributions.normal.Normal(mu_prior, std_prior)
+            posterior = torch.distributions.normal.Normal(mu_posterior, std_posterior)
+            kl_loss = torch.distributions.kl_divergence(posterior, prior).sum(dim=-1).mean()
+            sample = posterior.rsample()
+            zpred = self.decoder(torch.cat([zc.detach(), sample], dim=1))
+            zn = zn.detach()
+            loss += kl_loss * 0.01
+        else:
+            zpred = self.forward(z, a)
+
+        loss += ((zn - zpred)**2).sum(dim=-1).mean() * 0.1
 
         return loss, zpred
 
@@ -90,33 +146,34 @@ class Encoder(nn.Module):
     def __init__(self, din, dout):
         super().__init__()
 
-        self.mixer = mixer.MLP_Mixer(n_layers=2, n_channel=32, n_hidden=32, n_output=256, image_size=100, patch_size=10, n_image_channel=3)
+        self.mixer = mixer.MLP_Mixer(n_layers=2, n_channel=32, n_hidden=32, n_output=32*4*4, image_size=100, patch_size=10, n_image_channel=1)
 
-        #self.vit = ViT(image_size=100, patch_size=10, num_classes_1=256, dim=256, depth=6, heads=4, mlp_dim=512, channels=1)
+        #self.m = nn.Sequential(nn.Linear(256, 256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256,256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256, dout))
+        #self.m = nn.Sequential(nn.Linear(256, 256), nn.LeakyReLU(), nn.Linear(256,256), nn.LeakyReLU(), nn.Linear(256, dout))
+ 
+        self.bn1 = nn.BatchNorm1d(512)
+        self.bn2 = nn.BatchNorm2d(32)
 
-        #self.m = nn.Sequential(ResMLP(256), ResMLP(256), nn.Linear(256, dout))
-        self.m = nn.Sequential(nn.Linear(256, 256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256,256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256, dout))
+        self.m = nn.Sequential(nn.Linear(32*4*4*2, 256), nn.LeakyReLU(), nn.Linear(256, dout))
 
-    def forward(self, x):
+    def forward(self, x, do_bn=False):
 
         x = x.reshape((x.shape[0], 1, 100, 100))
 
-        #x = TF.gaussian_blur(x,7)*16
-        #x = TF.gaussian_blur(x,19)*32
-
-        p1 = torch.arange(0,1,0.01).reshape((1, 1, 100, 1)).repeat((x.shape[0], 1, 1, 100)).cuda()
-        p2 = torch.arange(0,1,0.01).reshape((1, 1, 1, 100)).repeat((x.shape[0], 1, 100, 1)).cuda()
-        x = torch.cat([x,p1,p2],dim=1)
+        #p1 = torch.arange(0,1,0.01).reshape((1, 1, 100, 1)).repeat((x.shape[0], 1, 1, 100)).cuda()
+        #p2 = torch.arange(0,1,0.01).reshape((1, 1, 1, 100)).repeat((x.shape[0], 1, 100, 1)).cuda()
+        #x = torch.cat([x,p1,p2],dim=1)
         
         h = self.mixer(x)
 
-        #p1 = (x.round()==1).nonzero(as_tuple=True)[2].unsqueeze(1).float().round() / 100.0
-        #p2 = (x.round()==1).nonzero(as_tuple=True)[3].unsqueeze(1).float().round() / 100.0
+        h1 = self.bn1(h)
+        h = h.reshape((h.shape[0], 32, 4, 4))
+        h2 = self.bn2(h)
 
-        #print(p1[0])
-        #print(p2[0])
+        h1 = h1.reshape((h.shape[0], -1))
+        h2 = h2.reshape((h.shape[0], -1))
 
-        #h = torch.cat([p1,p2], dim=1)
+        h = torch.cat([h1*0.0,h2],dim=1)
 
         return self.m(h)
 
@@ -126,7 +183,9 @@ class Probe(nn.Module):
         super().__init__()
 
         #self.enc = nn.Sequential(nn.Linear(din, 512), nn.BatchNorm1d(512), nn.LeakyReLU(), nn.Linear(512,512), nn.BatchNorm1d(512), nn.LeakyReLU(), nn.Linear(512, dout))
-        self.enc = nn.Sequential(nn.Linear(din, 512), nn.LeakyReLU(), nn.Linear(512,512), nn.LeakyReLU(), nn.Linear(512, dout))
+        
+        self.enc = nn.Sequential(ResMLP(256), nn.Linear(256, dout))
+        #self.enc = nn.Linear(din, dout)
 
     def forward(self, s):
         return self.enc(s)

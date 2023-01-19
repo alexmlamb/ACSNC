@@ -10,7 +10,7 @@ class BatchRenorm(nn.Module):
         self,
         num_features: int,
         eps: float = 1e-3,
-        momentum: float = 0.01,
+        momentum: float = 0.001,
         affine: bool = True,
     ):
         super().__init__()
