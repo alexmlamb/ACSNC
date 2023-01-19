@@ -174,7 +174,7 @@ if __name__ == '__main__':
 
             ac_loss = ac(st, stk, k, a)
             ap_loss, ap_abserr = a_probe.loss(st, astate)
-            ep_loss = ap_loss*0.0
+            ep_loss = ap_loss * 0.0
 
             z_loss, z_pred = forward.loss(st, stn, a)
 
@@ -339,7 +339,7 @@ if __name__ == '__main__':
         latent_states = np.array(latent_states)
 
         # clustering
-        kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
+        kmeans = KMeans(n_clusters=50, random_state=0, n_init="auto").fit(latent_states)
         predicted_labels = kmeans.predict(latent_states)
         pickle.dump(kmeans, open('kmeans.p', 'wb'))
 
@@ -387,7 +387,7 @@ if __name__ == '__main__':
         transition_img = empirical_mdp.visualize_transition(save_path='transition_img.png')
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image("transition_img.png")})
-        pickle.dump(empirical_mdp, open('empirical_mdp.p', 'wb'))
+        pickle.dump(empirical_mdp, open('empirical_mdp.p'))
 
     else:
         raise ValueError()
