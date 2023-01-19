@@ -12,6 +12,7 @@ import pickle
 from tqdm import tqdm
 from sklearn.cluster import KMeans
 import wandb
+from emprical_mdp import EmpiricalMDP
 
 '''
 Sample 100k examples.  
@@ -81,7 +82,7 @@ if __name__ == '__main__':
     # training args
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
-                            choices=['generate-data', 'train', 'cluster-latent'])
+                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=5, type=int)
@@ -337,6 +338,7 @@ if __name__ == '__main__':
         # clustering
         kmeans = KMeans(n_clusters=50, random_state=0, n_init="auto").fit(latent_states)
         predicted_labels = kmeans.predict(latent_states)
+        pickle.dump(kmeans, open('kmeans.p', 'wb'))
 
         # visualize and save
         plt.scatter(x=grounded_states[:, 0],
@@ -353,5 +355,40 @@ if __name__ == '__main__':
             wandb.log({'latent-cluster': wandb.Image("latent_cluster.png"),
                        'grounded-vs-predicted-state':
                            wandb.Image("ground_vs_predicted_state.png")})
+
+
+    elif args.opr == 'generate-mdp':
+        # load model
+        model = torch.load('model.p', map_location=torch.device('cpu'))
+        enc.load_state_dict(model['enc'])
+        enc.eval()
+
+        # load clustering
+        kmeans = pickle.load(open('kmeans.p', 'rb'))
+
+        # load-dataset
+        dataset = pickle.load(open('dataset.p', 'rb'))
+        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+
+        # generate latent-states and find corresponding label
+        latent_states, states_label, next_latent_states, next_states_label = [], [], [], []
+        for i in range(0, len(X), 256):
+            with torch.no_grad():
+                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
+                latent_states += _latent_state.cpu().numpy().tolist()
+                states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
+
+                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
+                next_latent_states += _latent_state.cpu().numpy().tolist()
+                next_states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
+
+        emprical_mdp = EmpiricalMDP(state=np.array(states_label),
+                                    action=A,
+                                    next_state=np.array(next_states_label),
+                                    reward=np.zeros_like(A))
+        transition_img = emprical_mdp.visualize_transition(save_path='transition_img.png')
+        if args.use_wandb:
+            wandb.log({'mdp': wandb.Image("transition_img.png")})
+
     else:
         raise ValueError()
