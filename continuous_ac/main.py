@@ -163,7 +163,7 @@ if __name__ == "__main__":
 
         ema_a_probe.eval()
         ema_forward.eval()
-        #ema_enc.eval()
+        ema_enc.eval()
 
 
         def vectorplot(a_use, name):
