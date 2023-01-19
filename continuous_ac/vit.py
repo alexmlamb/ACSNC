@@ -132,10 +132,17 @@ class ViT(nn.Module):
 if __name__ == "__main__":
 
     import mixer
-    vit = ViT(image_size=100, patch_size=10, num_classes_1=2, dim=256, depth=6, heads=4, mlp_dim=512).cuda()
-    mymixer = mixer.MLP_Mixer(n_layers=2, n_channel=32, n_hidden=32, n_output=2, image_size=100, patch_size=10, n_image_channel=1).cuda()
+    from batchrenorm import BatchRenorm1d
 
-    opt = torch.optim.Adam(mymixer.parameters())
+    #vit = ViT(image_size=100, patch_size=10, num_classes_1=2, dim=256, depth=6, heads=4, mlp_dim=512).cuda()
+    mymixer = mixer.MLP_Mixer(n_layers=2, n_channel=32, n_hidden=32, n_output=32*4*4, image_size=100, patch_size=10, n_image_channel=1).cuda()
+
+    post_net1 = nn.BatchNorm2d(32).cuda()
+    post_net2 = nn.LayerNorm(32).cuda()
+
+    post_net3 = nn.Sequential(nn.Linear(32*4*4, 256), nn.LeakyReLU(), nn.Linear(256,2)).cuda()
+
+    opt = torch.optim.Adam(list(mymixer.parameters()) + list(post_net1.parameters()) + list(post_net2.parameters()) + list(post_net3.parameters()))
 
     from main import sample_batch
     from room_env import RoomEnv
@@ -165,10 +172,27 @@ if __name__ == "__main__":
 
 
     for j in range(0,10000):
+
         xt, xtn, xtk, k, a, astate, estate = sample_batch(X, A, ast, est, 128)
         
         xt = xt.reshape((128, 1, 100, 100))
         pred = mymixer(xt)
+
+        pred = pred.reshape((128,32,4,4))
+
+        if j % 100 == 0:
+            post_net1.eval()
+        else:
+            post_net1.train()
+
+        if True:
+            pred = post_net1(pred)
+        else:
+            pred = post_net2(pred)
+
+        pred = pred.reshape((128,-1))
+
+        pred = post_net3(pred)
 
         loss = ((pred - astate)**2).sum(dim=-1).mean()
         abs_loss = (torch.abs(pred - astate)).mean()
@@ -182,6 +206,8 @@ if __name__ == "__main__":
 
             print(astate[0])
             print(pred[0])
+
+
 
 
 

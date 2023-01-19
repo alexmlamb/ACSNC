@@ -13,6 +13,7 @@ from tqdm import tqdm
 from sklearn.cluster import KMeans
 import wandb
 from emprical_mdp import EmpiricalMDP
+from ema_pytorch import EMA
 
 '''
 Sample 100k examples.  
@@ -32,7 +33,7 @@ bs_probe
 '''
 
 
-def sample_example(X, A, ast, est, max_k=5):
+def sample_example(X, A, ast, est, max_k):
     N = X.shape[0]
     t = random.randint(0, N - max_k - 1)
     k = random.randint(1, max_k)
@@ -40,7 +41,7 @@ def sample_example(X, A, ast, est, max_k=5):
     return (X[t], X[t + 1], X[t + k], k, A[t], ast[t], est[t])
 
 
-def sample_batch(X, A, ast, est, bs, max_k=5):
+def sample_batch(X, A, ast, est, bs, max_k):
     xt = []
     xtn = []
     xtk = []
@@ -85,7 +86,7 @@ if __name__ == '__main__':
                             choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
-    train_args.add_argument("--max_k", default=5, type=int)
+    train_args.add_argument("--max_k", default=2, type=int)
 
     # process arguments
     args = parser.parse_args()
@@ -106,6 +107,9 @@ if __name__ == '__main__':
     a_probe = Probe(args.latent_dim, 2).to(device)
     b_probe = Probe(args.latent_dim, 2).to(device)
     e_probe = Probe(args.latent_dim, 2).to(device)
+    ema_enc = EMA(enc, beta=0.99)
+    ema_forward = EMA(forward, beta=0.99)
+    ema_a_probe = EMA(a_probe.enc, beta=0.99)
 
     if args.opr == 'generate-data':
         X = []
@@ -135,18 +139,15 @@ if __name__ == '__main__':
     elif args.opr == 'train':
         dataset = pickle.load(open('dataset.p', 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
-
-        from ema_pytorch import EMA
-
-        ema_enc = EMA(enc, beta=0.99)
-        ema_forward = EMA(forward, beta=0.99)
-        ema_a_probe = EMA(a_probe.enc, beta=0.99)
-
         opt = torch.optim.Adam(list(ac.parameters())
                                + list(enc.parameters())
                                + list(a_probe.parameters())
                                + list(b_probe.parameters())
-                               + list(forward.parameters()))
+                               + list(forward.parameters()), lr=0.0001)
+
+        kmeans = KMeans(n_clusters=20).fit(A)
+
+        A = np.concatenate([A, kmeans.labels_.reshape((A.shape[0], 1))], axis=1)
 
         for j in range(0, 200000):
             ac.train()
@@ -162,14 +163,16 @@ if __name__ == '__main__':
             # sjoin = enc(xjoin)
             # st, stn, stk = torch.chunk(sjoin, 3, dim=0)
 
-            st = enc(xt)
-            stk = enc(xtk)
+            do_bn = (j < 5000)
 
-            stn = ema_enc(xtn)
+            st = enc(xt, do_bn)
+            stk = enc(xtk, do_bn)
+
+            stn = enc(xtn, do_bn)
 
             ac_loss = ac(st, stk, k, a)
             ap_loss, ap_abserr = a_probe.loss(st, astate)
-            ep_loss = ap_loss * 0.0
+            ep_loss = ap_loss*0.0
 
             z_loss, z_pred = forward.loss(st, stn, a)
 
@@ -185,129 +188,127 @@ if __name__ == '__main__':
             ema_a_probe.update()
             ema_enc.update()
 
-            if j % 100 == 0:
-                print(j, ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item())
-                if args.use_wandb:
-                    wandb.log(
-                        {'update': j,
-                         'ac-loss': ac_loss.item(),
-                         'a-loss': ap_abserr.item(),
-                         'asqr-loss': ap_loss.item()})
+        if j % 100 == 0:
+            print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss', z_loss.item())
+            if args.use_wandb:
+                wandb.log(
+                    {'update': j,
+                     'ac-loss': ac_loss.item(),
+                     'a-loss': ap_abserr.item(),
+                     'asqr-loss': ap_loss.item()})
 
                 # print('forward test')
                 # print('true[t]', astate[0])
                 # print('s[t]', a_probe.enc(st)[0], 'a[t]', a[0])
                 # print('s[t+1]', a_probe.enc(stn)[0], 'z[t+1]', a_probe.enc(z_pred)[0])
 
-            ema_a_probe.eval()
+        ema_a_probe.eval()
+        ema_forward.eval()
+        ema_enc.eval()
+
+        def vectorplot(a_use, name):
+
+            # make grid
+            action = []
+            xl = []
+            for a in range(2, 99, 5):
+                for b in range(2, 99, 10):
+                    action.append(a_use)
+                    true_s = [a * 1.0 / 100, b * 1.0 / 100]
+                    x = env.synth_obs(ap=true_s)
+                    xl.append(x)
+
+            action = torch.Tensor(np.array(action)).to(device)
+            xl = torch.Tensor(xl).to(device)
+            print(xl.shape, action.shape)
+            zt = ema_enc(xl)
+            ztn = ema_forward(zt, action)
+            st_inf = ema_a_probe(zt)
+            stn_inf = ema_a_probe(ztn)
+            print('st', st_inf[30], 'stn', stn_inf[30])
+
+            px = st_inf[:, 0]
+            py = stn_inf[:, 1]
+            pu = stn_inf[:, 0] - st_inf[:, 0]
+            pv = stn_inf[:, 1] - st_inf[:, 1]
+
+            plt.quiver(px.data.cpu(), py.data.cpu(), 0.5 * pu.data.cpu(), 0.5 * pv.data.cpu())
+            plt.title(name + " " + str(a_use))
+            plt.savefig('vectorfield_%s.png' % name)
+
+            plt.clf()
+
+            return xl, action
 
 
-            # ema_forward.eval()
-            # ema_enc.eval()
+        def squareplot(x_r, a_r):
 
-            def vectorplot(a_use, name):
+            true_s = [0.4, 0.4]
+            xl = env.synth_obs(ap=true_s)
+            xl = torch.Tensor(xl).to(device).unsqueeze(0)
 
-                # make grid
-                action = []
-                xl = []
-                for a in range(2, 99, 5):
-                    for b in range(2, 99, 10):
-                        action.append(a_use)
-                        true_s = [a * 1.0 / 100, b * 1.0 / 100]
-                        x = env.synth_obs(ap=true_s)
-                        xl.append(x)
+            xl = torch.cat([xl, x_r], dim=0)
 
-                action = torch.Tensor(np.array(action)).to(device)
-                xl = torch.Tensor(xl).to(device)
-                print(xl.shape, action.shape)
-                zt = ema_enc(xl)
-                ztn = ema_forward(zt, action)
-                st_inf = ema_a_probe(zt)
-                stn_inf = ema_a_probe(ztn)
-                print('st', st_inf[30], 'stn', stn_inf[30])
+            zt = ema_enc(xl)
 
-                px = st_inf[:, 0]
-                py = stn_inf[:, 1]
-                pu = stn_inf[:, 0] - st_inf[:, 0]
-                pv = stn_inf[:, 1] - st_inf[:, 1]
+            st_lst = []
 
-                plt.quiver(px.data.cpu(), py.data.cpu(), 0.5 * pu.data.cpu(), 0.5 * pv.data.cpu())
-                plt.title(name + " " + str(a_use))
-                plt.savefig('vectorfield_%s.png' % name)
+            a_lst = [[0.1, 0.0], [0.1, 0.0], [0.0, 0.1], [0.0, 0.1], [-0.1, 0.0], [-0.1, 0.0], [0.0, -0.1],
+                     [0.0, -0.1],
+                     [0.0, 0.0], [0.0, 0.0]]
+            for a in a_lst:
+                action = torch.Tensor(np.array(a)).to(device).unsqueeze(0)
+                action = torch.cat([action, a_r], dim=0)
+                st = ema_a_probe(zt)
+                st_lst.append(st.data.cpu()[0:1])
+                zt = ema_forward(zt, action)
+                print('st', st[0:1])
+                print('action', a)
 
-                plt.clf()
+            st_lst = torch.cat(st_lst, dim=0)
 
-                return xl, action
+            true_sq = np.array(
+                [[0.4, 0.4], [0.5, 0.4], [0.6, 0.4], [0.6, 0.5], [0.6, 0.6], [0.5, 0.6], [0.4, 0.6], [0.4, 0.5],
+                 [0.4, 0.4], [0.4, 0.4]])
 
+            plt.plot(st_lst[:, 0].numpy(), st_lst[:, 1].numpy())
+            plt.plot(true_sq[:, 0], true_sq[:, 1])
+            plt.ylim(0, 1)
+            plt.xlim(0, 1)
 
-            def squareplot(x_r, a_r):
-
-                true_s = [0.4, 0.4]
-                xl = env.synth_obs(ap=true_s)
-                xl = torch.Tensor(xl).to(device).unsqueeze(0)
-
-                xl = torch.cat([xl, x_r], dim=0)
-
-                zt = ema_enc(xl)
-
-                st_lst = []
-
-                a_lst = [[0.1, 0.0], [0.1, 0.0], [0.0, 0.1], [0.0, 0.1], [-0.1, 0.0], [-0.1, 0.0], [0.0, -0.1],
-                         [0.0, -0.1],
-                         [0.0, 0.0], [0.0, 0.0]]
-                for a in a_lst:
-                    action = torch.Tensor(np.array(a)).to(device).unsqueeze(0)
-                    action = torch.cat([action, a_r], dim=0)
-                    st = ema_a_probe(zt)
-                    st_lst.append(st.data.cpu()[0:1])
-                    zt = ema_forward(zt, action)
-                    print('st', st[0:1])
-                    print('action', a)
-
-                st_lst = torch.cat(st_lst, dim=0)
-
-                true_sq = np.array(
-                    [[0.4, 0.4], [0.5, 0.4], [0.6, 0.4], [0.6, 0.5], [0.6, 0.6], [0.5, 0.6], [0.4, 0.6], [0.4, 0.5],
-                     [0.4, 0.4], [0.4, 0.4]])
-
-                plt.plot(st_lst[:, 0].numpy(), st_lst[:, 1].numpy())
-                plt.plot(true_sq[:, 0], true_sq[:, 1])
-                plt.ylim(0, 1)
-                plt.xlim(0, 1)
-
-                plt.title("Square Plan")
-                plt.savefig('vectorfield_plan.png')
-                plt.clf()
+            plt.title("Square Plan")
+            plt.savefig('vectorfield_plan.png')
+            plt.clf()
 
 
-            if True and j % 1000 == 0:
-                vectorplot([0.0, 0.1], 'up')
-                vectorplot([0.0, -0.1], 'down')
-                vectorplot([-0.1, 0.0], 'left')
-                vectorplot([0.1, 0.0], 'right')
-                vectorplot([0.1, 0.1], 'up-right')
-                x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
+        if True and j % 1000 == 0:
+            vectorplot([0.0, 0.1], 'up')
+            vectorplot([0.0, -0.1], 'down')
+            vectorplot([-0.1, 0.0], 'left')
+            vectorplot([0.1, 0.0], 'right')
+            vectorplot([0.1, 0.1], 'up-right')
+            x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
 
-                squareplot(x_r, a_r)
+            squareplot(x_r, a_r)
 
-                if args.use_wandb:
-                    wandb.log({
-                        'vectorfields/down': wandb.Image("vectorfield_down.png"),
-                        'vectorfields/up': wandb.Image("vectorfield_up.png"),
-                        'vectorfields/left': wandb.Image("vectorfield_left.png"),
-                        'vectorfields/right': wandb.Image("vectorfield_right.png"),
-                        'vectorfields/up-right': wandb.Image("vectorfield_up-right.png"),
-                        'vectorfields/plan': wandb.Image("vectorfield_plan.png"),
-                        'update': j
-                    })
+            if args.use_wandb:
+                wandb.log({
+                    'vectorfields/down': wandb.Image("vectorfield_down.png"),
+                    'vectorfields/up': wandb.Image("vectorfield_up.png"),
+                    'vectorfields/left': wandb.Image("vectorfield_left.png"),
+                    'vectorfields/right': wandb.Image("vectorfield_right.png"),
+                    'vectorfields/up-right': wandb.Image("vectorfield_up-right.png"),
+                    'vectorfields/plan': wandb.Image("vectorfield_plan.png"),
+                    'update': j
+                })
 
-                # save
-                torch.save({'ac': ac.state_dict(),
-                            'enc': enc.state_dict(),
-                            'forward': forward.state_dict(),
-                            'a_probe': a_probe.state_dict(),
-                            'b_probe': b_probe.state_dict(),
-                            'e_probe': e_probe.state_dict()}, 'model.p')
+            # save
+            torch.save({'ac': ac.state_dict(),
+                        'enc': enc.state_dict(),
+                        'forward': forward.state_dict(),
+                        'a_probe': a_probe.state_dict(),
+                        'b_probe': b_probe.state_dict(),
+                        'e_probe': e_probe.state_dict()}, 'model.p')
 
     elif args.opr == 'cluster-latent':
 

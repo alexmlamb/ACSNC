@@ -34,8 +34,8 @@ class RoomEnv:
     def random_action(self):
 
         delta = [0, 0]
-        delta[0] = random.uniform(-0.1, 0.1)
-        delta[1] = random.uniform(-0.1, 0.1)
+        delta[0] = random.uniform(-0.2, 0.2)
+        delta[1] = random.uniform(-0.2, 0.2)
 
         return div_cast(delta)
 
