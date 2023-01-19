@@ -29,8 +29,8 @@ class EmpiricalMDP:
     def visualize_transition(self, save_path=None):
         graph = nx.DiGraph()
         edges = []
-        for state in self.state:
-            for next_state in self.next_state:
+        for state in self.unique_states:
+            for next_state in self.unique_states:
                 if not np.isnan(
                         self.transition[self.unique_states_dict[state], self.unique_states_dict[next_state], 0]):
                     edges.append((state, next_state))

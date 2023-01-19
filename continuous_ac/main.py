@@ -372,7 +372,7 @@ if __name__ == '__main__':
 
         # generate latent-states and find corresponding label
         latent_states, states_label, next_latent_states, next_states_label = [], [], [], []
-        for i in range(0, len(X), 256):
+        for i in tqdm(range(0, len(X), 256), desc="generate latent state from dataset"):
             with torch.no_grad():
                 _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                 latent_states += _latent_state.cpu().numpy().tolist()
