@@ -157,7 +157,8 @@ class Encoder(nn.Module):
         #self.m = nn.Sequential(nn.Linear(256, 256), nn.LeakyReLU(), nn.Linear(256,256), nn.LeakyReLU(), nn.Linear(256, dout))
 
         self.bn1 = nn.BatchNorm1d(512)
-        self.bn2 = nn.BatchNorm2d(32)
+        #self.bn2 = nn.BatchNorm2d(32)
+        self.bn2 = nn.GroupNorm(4,32)
 
         self.m = nn.Sequential(nn.Linear(32*4*4*2, 256), nn.LeakyReLU(), nn.Linear(256, dout))
 
