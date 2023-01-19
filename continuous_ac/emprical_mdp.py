@@ -31,8 +31,8 @@ class EmpiricalMDP:
         edges = []
         for state in self.state:
             for next_state in self.next_state:
-                if not np.isnan(
-                        self.transition[self.unique_states_dict[state], self.unique_states_dict[next_state], 0]):
+                if not np.isnan(self.transition[self.unique_states_dict[state],
+                                self.unique_states_dict[next_state], 0]):
                     edges.append((state, next_state))
 
         graph.add_edges_from(edges)

@@ -356,7 +356,6 @@ if __name__ == '__main__':
                        'grounded-vs-predicted-state':
                            wandb.Image("ground_vs_predicted_state.png")})
 
-
     elif args.opr == 'generate-mdp':
         # load model
         model = torch.load('model.p', map_location=torch.device('cpu'))
@@ -371,20 +370,16 @@ if __name__ == '__main__':
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
         # generate latent-states and find corresponding label
-        latent_states, states_label, next_latent_states, next_states_label = [], [], [], []
+        latent_states, states_label = [], []
         for i in range(0, len(X), 256):
             with torch.no_grad():
-                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
+                _latent_state = enc(torch.FloatTensor(X[i:i + 256 + 1]).to(device))
                 latent_states += _latent_state.cpu().numpy().tolist()
                 states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
 
-                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
-                next_latent_states += _latent_state.cpu().numpy().tolist()
-                next_states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
-
-        emprical_mdp = EmpiricalMDP(state=np.array(states_label),
+        emprical_mdp = EmpiricalMDP(state=np.array(states_label[:-1]),
                                     action=A,
-                                    next_state=np.array(next_states_label),
+                                    next_state=np.array(states_label[1:]),
                                     reward=np.zeros_like(A))
         transition_img = emprical_mdp.visualize_transition(save_path='transition_img.png')
         if args.use_wandb:
