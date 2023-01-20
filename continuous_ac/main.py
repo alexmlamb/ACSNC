@@ -380,14 +380,36 @@ if __name__ == '__main__':
                 latent_states += _latent_state.cpu().numpy().tolist()
                 states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
 
-        empirical_mdp = EmpiricalMDP(state=np.array(states_label)[:-1],
-                                     action=A[:-1],
-                                     next_state=np.array(states_label)[1:],
-                                     reward=np.zeros_like(A[:-1]))
+
+        next_state = np.array(states_label[1:])
+        next_state = next_state[np.abs(A[:-1]).sum(1) < 0.1]
+        states_label = np.array(states_label)[np.abs(A).sum(1) < 0.1]
+        A = A[np.abs(A).sum(1) < 0.1]
+
+        print(states_label.shape, A.shape, next_state.shape)
+
+        empirical_mdp = EmpiricalMDP(state=states_label,
+                                     action=A,
+                                     next_state=next_state,
+                                     reward=np.zeros_like(A))
+
+        #empirical_mdp = EmpiricalMDP(state=np.array(states_label)[:-1],
+        #                             action=A[:-1],
+        #                             next_state=np.array(states_label)[1:],
+        #                             reward=np.zeros_like(A[:-1]))
+
+
         transition_img = empirical_mdp.visualize_transition(save_path='transition_img.png')
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image("transition_img.png")})
         pickle.dump(empirical_mdp, open('empirical_mdp.p', 'wb'))
+
+    elif args.opr == 'low-level-plan':
+
+        model = torch.load('model.p', map_location=torch.device('cpu'))
+        enc.load_state_dict(model['enc'])
+        enc.eval()
+
 
     else:
         raise ValueError()
