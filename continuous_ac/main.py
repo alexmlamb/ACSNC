@@ -339,7 +339,7 @@ if __name__ == '__main__':
         latent_states = np.array(latent_states)
 
         # clustering
-        kmeans = KMeans(n_clusters=50, random_state=0, n_init="auto").fit(latent_states)
+        kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
         predicted_labels = kmeans.predict(latent_states)
         pickle.dump(kmeans, open('kmeans.p', 'wb'))
 
