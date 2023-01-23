@@ -1,4 +1,7 @@
 from room_env import RoomEnv
+import os, time 
+from os.path import join
+from datetime import datetime
 import matplotlib
 import random
 
@@ -133,17 +136,26 @@ if __name__ == '__main__':
         ast = np.array(ast).astype('float32')
         est = np.array(est).astype('float32')
 
-        pickle.dump({'X': X, 'A': A, 'ast': ast, 'est': est}, open('dataset.p', 'wb'))
+        import os 
+        os.makedirs("data") if not os.path.exists("data") else None
+        pickle.dump({'X': X, 'A': A, 'ast': ast, 'est': est}, open('data/dataset.p', 'wb'))
 
         print('data generated and stored in dataset.p')
     elif args.opr == 'train':
-        dataset = pickle.load(open('dataset.p', 'rb'))
+        dataset = pickle.load(open('data/dataset.p', 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
         opt = torch.optim.Adam(list(ac.parameters())
                                + list(enc.parameters())
                                + list(a_probe.parameters())
                                + list(b_probe.parameters())
                                + list(forward.parameters()), lr=0.0001)
+
+        field_folder = "fields" #+ datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
+        plan_folder  = "fields" #+ datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
+        os.makedirs(field_folder) if not os.path.exists(field_folder) else None 
+        os.makedirs(plan_folder) if not os.path.exists(plan_folder) else None 
+
+        colors = iter(plt.cm.inferno_r(np.linspace(.25, 1, 200000)))
 
         print('Run K-mneas')
         kmeans = KMeans(n_clusters=20, verbose=1).fit(A)
@@ -158,12 +170,6 @@ if __name__ == '__main__':
             forward.train()
             xt, xtn, xtk, k, a, astate, estate = sample_batch(X, A, ast, est, 128, max_k=args.max_k)
             astate = torch.round(astate, decimals=3)
-
-            # print('-----')
-
-            # xjoin = torch.cat([xt,xtn,xtk],dim=0)
-            # sjoin = enc(xjoin)
-            # st, stn, stk = torch.chunk(sjoin, 3, dim=0)
 
             do_bn = (j < 5000)
 
@@ -199,16 +205,14 @@ if __name__ == '__main__':
                          'a-loss': ap_abserr.item(),
                          'asqr-loss': ap_loss.item()})
 
-                    # print('forward test')
-                    # print('true[t]', astate[0])
-                    # print('s[t]', a_probe.enc(st)[0], 'a[t]', a[0])
-                    # print('s[t+1]', a_probe.enc(stn)[0], 'z[t+1]', a_probe.enc(z_pred)[0])
-
             ema_a_probe.eval()
             ema_forward.eval()
             ema_enc.eval()
 
             def vectorplot(a_use, name):
+
+                fig, ax1 = plt.subplots(1, 1, figsize=(16,9))            
+                fontdict = {'fontsize':28, 'fontweight':'bold'}
 
                 # make grid
                 action = []
@@ -234,11 +238,26 @@ if __name__ == '__main__':
                 pu = stn_inf[:, 0] - st_inf[:, 0]
                 pv = stn_inf[:, 1] - st_inf[:, 1]
 
-                plt.quiver(px.data.cpu(), py.data.cpu(), 0.5 * pu.data.cpu(), 0.5 * pv.data.cpu())
-                plt.title(name + " " + str(a_use))
-                plt.savefig('vectorfield_%s.png' % name)
+                #plot the quivers
+                ax1.grid('on')
+                ax1.plot(px.data.cpu(), py.data.cpu(), linewidth=1, color=next(colors))
+                ax1.quiver(px.data.cpu(), py.data.cpu(), 0.5*pu.data.cpu(), 0.5*pv.data.cpu())
+                ax1.set_title(name + " " + str(a_use))
 
+                
+                ax1.set_ylabel(rf"y (pixels)", fontdict=fontdict)
+                ax1.set_xlabel(rf"x (pixels)", fontdict=fontdict)
+                ax1.tick_params(axis='both', which='major', labelsize=28)
+                ax1.tick_params(axis='both', which='minor', labelsize=18)
+                ax1.set_title(rf"State Trajectories: {name} {a_use}.", fontdict=fontdict)
+                ax1.legend(loc="center left", fontsize=8)
+
+                fig.savefig(join(field_folder, rf"field_{name}.jpg"), dpi=79, bbox_inches='tight',facecolor='None')
+                
+                fig.canvas.draw()
+                fig.canvas.flush_events()
                 plt.clf()
+                time.sleep(.01)
 
                 return xl, action
 
@@ -272,14 +291,23 @@ if __name__ == '__main__':
                 true_sq = np.array(
                     [[0.4, 0.4], [0.5, 0.4], [0.6, 0.4], [0.6, 0.5], [0.6, 0.6], [0.5, 0.6], [0.4, 0.6], [0.4, 0.5],
                      [0.4, 0.4], [0.4, 0.4]])
+                
+                fig, ax = plt.subplots(1, 1, figsize=(16,9))            
+                fontdict = {'fontsize':28, 'fontweight':'bold'}
 
-                plt.plot(st_lst[:, 0].numpy(), st_lst[:, 1].numpy())
-                plt.plot(true_sq[:, 0], true_sq[:, 1])
-                plt.ylim(0, 1)
-                plt.xlim(0, 1)
+                ax.grid('on')
 
-                plt.title("Square Plan")
-                plt.savefig('vectorfield_plan.png')
+                ax.plot(st_lst[:,0].numpy(), st_lst[:,1].numpy(), linewidth=2, color=next(colors))
+                ax.plot(true_sq[:,0], true_sq[:,1], linewidth=2, color="magenta")
+                ax.set_ylim(0,1)
+                ax.set_xlim(0,1)
+                ax.set_ylabel(rf"y (pixels)", fontdict=fontdict)
+                ax.set_xlabel(rf"x (pixels)", fontdict=fontdict)
+                ax.tick_params(axis='both', which='major', labelsize=28)
+                ax.tick_params(axis='both', which='minor', labelsize=18)
+
+                ax.set_title("Square Plan", fontdict=fontdict)
+                fig.savefig(join(plan_folder, f"plan.jpg"), dpi=79, bbox_inches='tight',facecolor='None')
                 plt.clf()
 
 
@@ -295,12 +323,12 @@ if __name__ == '__main__':
 
                 if args.use_wandb:
                     wandb.log({
-                        'vectorfields/down': wandb.Image("vectorfield_down.png"),
-                        'vectorfields/up': wandb.Image("vectorfield_up.png"),
-                        'vectorfields/left': wandb.Image("vectorfield_left.png"),
-                        'vectorfields/right': wandb.Image("vectorfield_right.png"),
-                        'vectorfields/up-right': wandb.Image("vectorfield_up-right.png"),
-                        'vectorfields/plan': wandb.Image("vectorfield_plan.png"),
+                        'fields/down': wandb.Image(join(field_folder,"vectorfield_down.png")),
+                        'fields/up': wandb.Image(join(field_folder,"vectorfield_up.png")),
+                        'fields/left': wandb.Image(join(field_folder,"vectorfield_left.png")),
+                        'fields/right': wandb.Image(join(field_folder,"vectorfield_right.png")),
+                        'fields/up-right': wandb.Image(join(field_folder,"vectorfield_up-right.png")),
+                        'fields/plan': wandb.Imagejoin(join(field_folder,"vectorfield_plan.png")),
                         'update': j
                     })
 
@@ -310,7 +338,7 @@ if __name__ == '__main__':
                             'forward': forward.state_dict(),
                             'a_probe': a_probe.state_dict(),
                             'b_probe': b_probe.state_dict(),
-                            'e_probe': e_probe.state_dict()}, 'model.p')
+                            'e_probe': e_probe.state_dict()}, 'data/model.p')
 
     elif args.opr == 'cluster-latent':
 
@@ -322,7 +350,7 @@ if __name__ == '__main__':
         a_probe.eval()
 
         # load-dataset
-        dataset = pickle.load(open('dataset.p', 'rb'))
+        dataset = pickle.load(open('data/dataset.p', 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
         # generate latent-states and ground them
@@ -348,16 +376,15 @@ if __name__ == '__main__':
                     y=grounded_states[:, 1],
                     c=predicted_labels,
                     marker='.')
-        plt.savefig('latent_cluster.png')
+        plt.savefig(join(field_folder, 'latent_cluster.png'))
         plt.clf()
         plt.scatter(x=grounded_states[:, 0],
                     y=predicted_grounded_states[:, 0],
                     marker='.')
-        plt.savefig('ground_vs_predicted_state.png')
+        plt.savefig(join(field_folder, 'ground_vs_predicted_state.png'))
         if args.use_wandb:
-            wandb.log({'latent-cluster': wandb.Image("latent_cluster.png"),
-                       'grounded-vs-predicted-state':
-                           wandb.Image("ground_vs_predicted_state.png")})
+            wandb.log({'latent-cluster': wandb.Image(join(field_folder, "latent_cluster.png")),
+                       'grounded-vs-predicted-state': wandb.Image(join(field_folder, "ground_vs_predicted_state.png"))})
 
     elif args.opr == 'generate-mdp':
         # load model
@@ -399,9 +426,9 @@ if __name__ == '__main__':
         #                             reward=np.zeros_like(A[:-1]))
 
 
-        transition_img = empirical_mdp.visualize_transition(save_path='transition_img.png')
+        transition_img = empirical_mdp.visualize_transition(save_path=join(field_folder, 'transition_img.png'))
         if args.use_wandb:
-            wandb.log({'mdp': wandb.Image("transition_img.png")})
+            wandb.log({'mdp': wandb.Image(join(field_folder, "transition_img.png"))})
         pickle.dump(empirical_mdp, open('empirical_mdp.p'))
 
     elif args.opr == 'low-level-plan':
