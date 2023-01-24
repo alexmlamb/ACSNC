@@ -87,7 +87,8 @@ if __name__ == '__main__':
     # training args
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
-                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp', 'debug-abstract-plans'])
+                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp',
+                                     'debug-abstract-plans'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
@@ -338,9 +339,9 @@ if __name__ == '__main__':
                         'fields/left': wandb.Image(join(field_folder, "field_left.jpg")),
                         'fields/right': wandb.Image(join(field_folder, "field_right.jpg")),
                         'fields/up-right': wandb.Image(join(field_folder,
-                            "field_up-right.jpg")),
+                                                            "field_up-right.jpg")),
                         'fields/plan': wandb.Image(join(plan_folder,
-                            "plan.jpg")),
+                                                        "plan.jpg")),
                         'update': j
                     })
 
@@ -456,6 +457,7 @@ if __name__ == '__main__':
 
             return plan
 
+
         def obs_sampler(dataset_obs, dataset_agent_states, state_labels, abstract_state):
             _filtered_obs = dataset_obs[state_labels == abstract_state]
             _filtered_agent_states = dataset_agent_states[state_labels == abstract_state]
@@ -483,35 +485,40 @@ if __name__ == '__main__':
 
         # generate random plans over abstract states
         abstract_plans = [
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=2),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=2),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=3),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=3),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=4),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=4),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=5),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=5),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=10),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=10),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=15),
-                          abstract_path_sampler(empirical_mdp, abstract_horizon=15)]
+            abstract_path_sampler(empirical_mdp, abstract_horizon=2),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=2),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=3),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=3),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=4),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=4),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=5),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=5),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=10),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=10),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=15),
+            abstract_path_sampler(empirical_mdp, abstract_horizon=15)]
 
         # rollout
         max_rollout_steps = 1000
         for plan in abstract_plans:
 
             # initial-step
-            obs, true_agent_state = obs_sampler(X,ast,empirical_mdp.state, abstract_state=plan['states'][0])
+            obs, true_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=plan['states'][0])
             step_count = 0
             visited_states = [plan['states'][0]]
 
             while step_count < max_rollout_steps:
+
+                step_action = plan['actions'][len(visited_states) - 1]
+
+                # step into env.
                 env.agent_pos = true_agent_state
-                step_action  = plan['actions'][len(visited_states)-1]
                 env.step(step_action)
-                next_obs,_,_ = env.get_obs()
+                next_obs, _, _ = env.get_obs()
                 step_count += 1
-                next_state = kmeans.predict(enc(torch.FloatTensor(next_obs).to(device).unsqueeze(0)).cpu().detach().numpy().tolist())[0]
+                with torch.no_grad():
+                    _latent_state = enc(torch.FloatTensor(next_obs).to(device).unsqueeze(0)).cpu().numpy().tolist()
+                next_state = kmeans.predict(_latent_state)[0]
 
                 # check for cluster switch
                 if next_state != visited_states[-1]:
@@ -523,15 +530,23 @@ if __name__ == '__main__':
 
                 # transition
                 obs = next_obs
-           
+
                 if len(visited_states) == len(plan['states']):
                     break
-             
+
             # log success/failure
             if visited_states == plan['states']:
-                print(f'Success \n\t => Abstract Horizon: {len(plan["states"])} \n\t => Low-Level Steps: {step_count} \n\t => Original Plan: {plan["states"]} \n\t => Executed Plan: {visited_states}')
+                print(f'Success: '
+                      f'\n\t => Abstract Horizon: {len(plan["states"])}'
+                      f'\n\t => Low-Level Steps: {step_count} '
+                      f'\n\t => Original Plan: 'f'{plan["states"]}'
+                      f'\n\t => Executed Plan: {visited_states}')
             else:
-                print(f'Failure: \n\t => Abstract Horizon: {len(plan["states"])}  \n\t => Low-Level Steps: {step_count} \n\t => Original Plan: {plan["states"]} \n\t  => Executed Plan: {visited_states}')
+                print(f'Failure: '
+                      f'\n\t => Abstract Horizon: {len(plan["states"])}'
+                      f'\n\t => Low-Level Steps: {step_count}'
+                      f'\n\t => Original Plan: {plan["states"]}'
+                      f'\n\t  => Executed Plan: {visited_states}')
 
 
     elif args.opr == 'low-level-plan':
