@@ -540,13 +540,13 @@ if __name__ == '__main__':
                       f'\n\t => Abstract Horizon: {len(plan["states"])}'
                       f'\n\t => Low-Level Steps: {step_count} '
                       f'\n\t => Original Plan: 'f'{plan["states"]}'
-                      f'\n\t => Executed Plan: {visited_states}')
+                      f'\n\t => Executed Plan: {visited_states} \n')
             else:
                 print(f'Failure: '
                       f'\n\t => Abstract Horizon: {len(plan["states"])}'
                       f'\n\t => Low-Level Steps: {step_count}'
                       f'\n\t => Original Plan: {plan["states"]}'
-                      f'\n\t  => Executed Plan: {visited_states}')
+                      f'\n\t  => Executed Plan: {visited_states} \n')
 
 
     elif args.opr == 'low-level-plan':
