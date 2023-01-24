@@ -1,5 +1,5 @@
 from room_env import RoomEnv
-import os, time 
+import os, time
 from os.path import join
 from datetime import datetime
 import matplotlib
@@ -17,6 +17,7 @@ from sklearn.cluster import KMeans
 import wandb
 from emprical_mdp import EmpiricalMDP
 from ema_pytorch import EMA
+import os
 
 '''
 Sample 100k examples.  
@@ -86,14 +87,21 @@ if __name__ == '__main__':
     # training args
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
-                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp'])
+                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp', 'debug-abstract-plans'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
+    train_args.add_argument("--seed", default=0, type=int)
 
     # process arguments
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # seed
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    if device == "cuda":
+        torch.cuda.manual_seed(args.seed)
 
     # wandb init
     if args.use_wandb:
@@ -113,6 +121,14 @@ if __name__ == '__main__':
     ema_enc = EMA(enc, beta=0.99)
     ema_forward = EMA(forward, beta=0.99)
     ema_a_probe = EMA(a_probe.enc, beta=0.99)
+
+    field_folder = os.path.join(os.getcwd(), "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
+    plan_folder = os.path.join(os.getcwd(), "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
+    dataset_path = os.path.join(os.getcwd(), 'data', 'dataset.p')
+    model_path = os.path.join(os.getcwd(), 'data', 'model.p')
+    os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
+    os.makedirs(field_folder, exist_ok=True)
+    os.makedirs(plan_folder, exist_ok=True)
 
     if args.opr == 'generate-data':
         X = []
@@ -136,24 +152,17 @@ if __name__ == '__main__':
         ast = np.array(ast).astype('float32')
         est = np.array(est).astype('float32')
 
-        import os 
-        os.makedirs("data") if not os.path.exists("data") else None
-        pickle.dump({'X': X, 'A': A, 'ast': ast, 'est': est}, open('data/dataset.p', 'wb'))
+        pickle.dump({'X': X, 'A': A, 'ast': ast, 'est': est}, open(dataset_path, 'wb'))
 
-        print('data generated and stored in dataset.p')
+        print(f'data generated and stored in {dataset_path}')
     elif args.opr == 'train':
-        dataset = pickle.load(open('data/dataset.p', 'rb'))
+        dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
         opt = torch.optim.Adam(list(ac.parameters())
                                + list(enc.parameters())
                                + list(a_probe.parameters())
                                + list(b_probe.parameters())
                                + list(forward.parameters()), lr=0.0001)
-
-        field_folder = "fields" #+ datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
-        plan_folder  = "fields" #+ datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
-        os.makedirs(field_folder) if not os.path.exists(field_folder) else None 
-        os.makedirs(plan_folder) if not os.path.exists(plan_folder) else None 
 
         colors = iter(plt.cm.inferno_r(np.linspace(.25, 1, 200000)))
 
@@ -197,7 +206,8 @@ if __name__ == '__main__':
             ema_enc.update()
 
             if j % 100 == 0:
-                print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss', z_loss.item())
+                print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss',
+                      z_loss.item())
                 if args.use_wandb:
                     wandb.log(
                         {'update': j,
@@ -209,10 +219,11 @@ if __name__ == '__main__':
             ema_forward.eval()
             ema_enc.eval()
 
+
             def vectorplot(a_use, name):
 
-                fig, ax1 = plt.subplots(1, 1, figsize=(16,9))            
-                fontdict = {'fontsize':28, 'fontweight':'bold'}
+                fig, ax1 = plt.subplots(1, 1, figsize=(16, 9))
+                fontdict = {'fontsize': 28, 'fontweight': 'bold'}
 
                 # make grid
                 action = []
@@ -238,13 +249,12 @@ if __name__ == '__main__':
                 pu = stn_inf[:, 0] - st_inf[:, 0]
                 pv = stn_inf[:, 1] - st_inf[:, 1]
 
-                #plot the quivers
+                # plot the quivers
                 ax1.grid('on')
                 ax1.plot(px.data.cpu(), py.data.cpu(), linewidth=1, color=next(colors))
-                ax1.quiver(px.data.cpu(), py.data.cpu(), 0.5*pu.data.cpu(), 0.5*pv.data.cpu())
+                ax1.quiver(px.data.cpu(), py.data.cpu(), 0.5 * pu.data.cpu(), 0.5 * pv.data.cpu())
                 ax1.set_title(name + " " + str(a_use))
 
-                
                 ax1.set_ylabel(rf"y (pixels)", fontdict=fontdict)
                 ax1.set_xlabel(rf"x (pixels)", fontdict=fontdict)
                 ax1.tick_params(axis='both', which='major', labelsize=28)
@@ -252,8 +262,8 @@ if __name__ == '__main__':
                 ax1.set_title(rf"State Trajectories: {name} {a_use}.", fontdict=fontdict)
                 ax1.legend(loc="center left", fontsize=8)
 
-                fig.savefig(join(field_folder, rf"field_{name}.jpg"), dpi=79, bbox_inches='tight',facecolor='None')
-                
+                fig.savefig(join(field_folder, rf"field_{name}.jpg"), dpi=79, bbox_inches='tight', facecolor='None')
+
                 fig.canvas.draw()
                 fig.canvas.flush_events()
                 plt.clf()
@@ -291,23 +301,23 @@ if __name__ == '__main__':
                 true_sq = np.array(
                     [[0.4, 0.4], [0.5, 0.4], [0.6, 0.4], [0.6, 0.5], [0.6, 0.6], [0.5, 0.6], [0.4, 0.6], [0.4, 0.5],
                      [0.4, 0.4], [0.4, 0.4]])
-                
-                fig, ax = plt.subplots(1, 1, figsize=(16,9))            
-                fontdict = {'fontsize':28, 'fontweight':'bold'}
+
+                fig, ax = plt.subplots(1, 1, figsize=(16, 9))
+                fontdict = {'fontsize': 28, 'fontweight': 'bold'}
 
                 ax.grid('on')
 
-                ax.plot(st_lst[:,0].numpy(), st_lst[:,1].numpy(), linewidth=2, color=next(colors))
-                ax.plot(true_sq[:,0], true_sq[:,1], linewidth=2, color="magenta")
-                ax.set_ylim(0,1)
-                ax.set_xlim(0,1)
+                ax.plot(st_lst[:, 0].numpy(), st_lst[:, 1].numpy(), linewidth=2, color=next(colors))
+                ax.plot(true_sq[:, 0], true_sq[:, 1], linewidth=2, color="magenta")
+                ax.set_ylim(0, 1)
+                ax.set_xlim(0, 1)
                 ax.set_ylabel(rf"y (pixels)", fontdict=fontdict)
                 ax.set_xlabel(rf"x (pixels)", fontdict=fontdict)
                 ax.tick_params(axis='both', which='major', labelsize=28)
                 ax.tick_params(axis='both', which='minor', labelsize=18)
 
                 ax.set_title("Square Plan", fontdict=fontdict)
-                fig.savefig(join(plan_folder, f"plan.jpg"), dpi=79, bbox_inches='tight',facecolor='None')
+                fig.savefig(join(plan_folder, f"plan.jpg"), dpi=79, bbox_inches='tight', facecolor='None')
                 plt.clf()
 
 
@@ -323,12 +333,12 @@ if __name__ == '__main__':
 
                 if args.use_wandb:
                     wandb.log({
-                        'fields/down': wandb.Image(join(field_folder,"vectorfield_down.png")),
-                        'fields/up': wandb.Image(join(field_folder,"vectorfield_up.png")),
-                        'fields/left': wandb.Image(join(field_folder,"vectorfield_left.png")),
-                        'fields/right': wandb.Image(join(field_folder,"vectorfield_right.png")),
-                        'fields/up-right': wandb.Image(join(field_folder,"vectorfield_up-right.png")),
-                        'fields/plan': wandb.Imagejoin(join(field_folder,"vectorfield_plan.png")),
+                        'fields/down': wandb.Image(join(field_folder, "vectorfield_down.png")),
+                        'fields/up': wandb.Image(join(field_folder, "vectorfield_up.png")),
+                        'fields/left': wandb.Image(join(field_folder, "vectorfield_left.png")),
+                        'fields/right': wandb.Image(join(field_folder, "vectorfield_right.png")),
+                        'fields/up-right': wandb.Image(join(field_folder, "vectorfield_up-right.png")),
+                        'fields/plan': wandb.Imagejoin(join(field_folder, "vectorfield_plan.png")),
                         'update': j
                     })
 
@@ -338,12 +348,12 @@ if __name__ == '__main__':
                             'forward': forward.state_dict(),
                             'a_probe': a_probe.state_dict(),
                             'b_probe': b_probe.state_dict(),
-                            'e_probe': e_probe.state_dict()}, 'data/model.p')
+                            'e_probe': e_probe.state_dict()}, model_path)
 
     elif args.opr == 'cluster-latent':
 
         # load model
-        model = torch.load('model.p', map_location=torch.device('cpu'))
+        model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         a_probe.load_state_dict(model['a_probe'])
         enc.eval()
@@ -388,7 +398,7 @@ if __name__ == '__main__':
 
     elif args.opr == 'generate-mdp':
         # load model
-        model = torch.load('model.p', map_location=torch.device('cpu'))
+        model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
 
@@ -407,7 +417,6 @@ if __name__ == '__main__':
                 latent_states += _latent_state.cpu().numpy().tolist()
                 states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
 
-
         next_state = np.array(states_label[1:])
         next_state = next_state[np.abs(A[:-1]).sum(1) < 0.1]
         states_label = np.array(states_label)[np.abs(A).sum(1) < 0.1]
@@ -420,16 +429,90 @@ if __name__ == '__main__':
                                      next_state=next_state,
                                      reward=np.zeros_like(A))
 
-        #empirical_mdp = EmpiricalMDP(state=np.array(states_label)[:-1],
-        #                             action=A[:-1],
-        #                             next_state=np.array(states_label)[1:],
-        #                             reward=np.zeros_like(A[:-1]))
-
-
         transition_img = empirical_mdp.visualize_transition(save_path=join(field_folder, 'transition_img.png'))
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image(join(field_folder, "transition_img.png"))})
         pickle.dump(empirical_mdp, open('empirical_mdp.p'))
+
+    elif args.opr == 'debug-abstract-plans':
+        def abstract_path_sampler(empirical_mdp, abstract_horizon):
+            plan = {'states': [], 'actions': []}
+
+            init_state = np.random.choice(empirical_mdp.unique_states)
+            plan['states'].append(init_state)
+
+            while len(plan['states']) != abstract_horizon:
+                current_state = plan['states'][-1]
+                next_state_candidates = []
+                for state in empirical_mdp.unique_states:
+                    if not np.isnan(empirical_mdp.transition[current_state][state]) and state != current_state:
+                        next_state_candidates.append(state)
+                next_state = np.random.choice(next_state_candidates)
+                plan['actions'].append(empirical_mdp.transition[current_state, next_state])
+                plan['states'].append(next_state)
+
+            return plan
+
+
+        def obs_sampler(dataset_obs, dataset_agent_states, state_labels, abstract_state):
+            _filtered_obs = dataset_obs[state_labels == abstract_state]
+            _filtered_agent_states = dataset_agent_states[state_labels == abstract_state]
+            index = np.random.choice(range(len(_filtered_obs)))
+            return _filtered_obs[index], _filtered_agent_states[index]
+
+
+        # load model
+        empirical_mdp = pickle.load(open('empirical_mdp.p', 'r'))
+
+        # load clustering
+        kmeans = pickle.load(open('kmeans.p', 'rb'))
+
+        # load-dataset
+        dataset = pickle.load(open(dataset_path, 'rb'))
+        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+
+        # generate random plans over abstract states
+        abstract_plans = [abstract_path_sampler(empirical_mdp, abstract_horizon=2),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=5),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=10),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=15)]
+
+        # rollout
+        max_rollout_steps = 1000
+        for plan in abstract_plans:
+
+            # initial-step
+            obs, true_agent_state = obs_sampler(abstract_state=plan['states'][0])
+            step_action = plan['actions'][0]
+            step_count = 0
+            visited_states = [plan['states'][0]]
+
+            while step_count < max_rollout_steps:
+                env.agent_pos = true_agent_state
+                next_obs = env.step(step_action)
+                step_count += 1
+                next_state = kmeans.predict(next_obs)
+
+                # check for cluster switch
+                if next_state != visited_states[-1]:
+                    if plan['state'][len(visited_states)] == next_state:  # check if the plan matches
+                        visited_states.append(next_state)
+                        step_action = plan['actions'][len(visited_states)]
+                    else:
+                        break  # if the next-abstract state does not match with actual plan
+
+                # transition
+                obs = next_obs
+
+            # log success/failure
+            if all(visited_states == plan['states']):
+                print('success')
+            else:
+                print('failure')
+
+        # visualize-plans
+        for plan in abstract_plans:
+            empirical_mdp.visualize_plan(plan)
 
     elif args.opr == 'low-level-plan':
 

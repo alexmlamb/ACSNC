@@ -40,3 +40,18 @@ class EmpiricalMDP:
         if save_path is not None:
             plt.savefig(save_path)
         return graph
+
+    def visualize_path(self, path, save_path=None):
+        graph = nx.DiGraph()
+        edges = []
+        for state in self.unique_states:
+            for next_state in self.unique_states:
+                if not np.isnan(
+                        self.transition[self.unique_states_dict[state], self.unique_states_dict[next_state], 0]):
+                    edges.append((state, next_state))
+
+        graph.add_edges_from(edges)
+        nx.draw(graph, with_labels=True)
+        if save_path is not None:
+            plt.savefig(save_path)
+        return graph
