@@ -333,12 +333,14 @@ if __name__ == '__main__':
 
                 if args.use_wandb:
                     wandb.log({
-                        'fields/down': wandb.Image(join(field_folder, "vectorfield_down.png")),
-                        'fields/up': wandb.Image(join(field_folder, "vectorfield_up.png")),
-                        'fields/left': wandb.Image(join(field_folder, "vectorfield_left.png")),
-                        'fields/right': wandb.Image(join(field_folder, "vectorfield_right.png")),
-                        'fields/up-right': wandb.Image(join(field_folder, "vectorfield_up-right.png")),
-                        'fields/plan': wandb.Imagejoin(join(field_folder, "vectorfield_plan.png")),
+                        'fields/down': wandb.Image(join(field_folder, "field_down.jpg")),
+                        'fields/up': wandb.Image(join(field_folder, "field_up.jpg")),
+                        'fields/left': wandb.Image(join(field_folder, "field_left.jpg")),
+                        'fields/right': wandb.Image(join(field_folder, "field_right.jpg")),
+                        'fields/up-right': wandb.Image(join(field_folder,
+                            "field_up-right.jpg")),
+                        'fields/plan': wandb.Image(join(plan_folder,
+                            "plan.jpg")),
                         'update': j
                     })
 
@@ -395,7 +397,7 @@ if __name__ == '__main__':
         if args.use_wandb:
             wandb.log({'latent-cluster': wandb.Image(join(field_folder, "latent_cluster.png")),
                        'grounded-vs-predicted-state': wandb.Image(join(field_folder, "ground_vs_predicted_state.png"))})
-
+            wandb.save(glob_str='kmeans.p', policy='now')
     elif args.opr == 'generate-mdp':
         # load model
         model = torch.load(model_path, map_location=torch.device('cpu'))
@@ -446,14 +448,13 @@ if __name__ == '__main__':
                 current_state = plan['states'][-1]
                 next_state_candidates = []
                 for state in empirical_mdp.unique_states:
-                    if not np.isnan(empirical_mdp.transition[current_state][state]) and state != current_state:
+                    if not np.isnan(empirical_mdp.transition[current_state][state]).all() and state != current_state:
                         next_state_candidates.append(state)
                 next_state = np.random.choice(next_state_candidates)
                 plan['actions'].append(empirical_mdp.transition[current_state, next_state])
                 plan['states'].append(next_state)
 
             return plan
-
 
         def obs_sampler(dataset_obs, dataset_agent_states, state_labels, abstract_state):
             _filtered_obs = dataset_obs[state_labels == abstract_state]
@@ -462,21 +463,37 @@ if __name__ == '__main__':
             return _filtered_obs[index], _filtered_agent_states[index]
 
 
-        # load model
-        empirical_mdp = pickle.load(open('empirical_mdp.p', 'r'))
+        # load abstract mdp
+        empirical_mdp = pickle.load(open('empirical_mdp.p', 'rb'))
 
         # load clustering
         kmeans = pickle.load(open('kmeans.p', 'rb'))
 
+        # load dynamics
+        model = torch.load(model_path, map_location=torch.device('cpu'))
+        enc.load_state_dict(model['enc'])
+        enc.eval()
+
         # load-dataset
         dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
-        
-        import pdb; pdb.set_trace()
+        X = X[np.abs(A).sum(1) < 0.1]
+        ast = ast[np.abs(A).sum(1) < 0.1]
+        A = A[np.abs(A).sum(1) < 0.1]
+
         # generate random plans over abstract states
-        abstract_plans = [abstract_path_sampler(empirical_mdp, abstract_horizon=2),
+        abstract_plans = [
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=2),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=2),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=3),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=3),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=4),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=4),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=5),
                           abstract_path_sampler(empirical_mdp, abstract_horizon=5),
                           abstract_path_sampler(empirical_mdp, abstract_horizon=10),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=10),
+                          abstract_path_sampler(empirical_mdp, abstract_horizon=15),
                           abstract_path_sampler(empirical_mdp, abstract_horizon=15)]
 
         # rollout
@@ -484,37 +501,38 @@ if __name__ == '__main__':
         for plan in abstract_plans:
 
             # initial-step
-            obs, true_agent_state = obs_sampler(abstract_state=plan['states'][0])
-            step_action = plan['actions'][0]
+            obs, true_agent_state = obs_sampler(X,ast,empirical_mdp.state, abstract_state=plan['states'][0])
             step_count = 0
             visited_states = [plan['states'][0]]
 
             while step_count < max_rollout_steps:
                 env.agent_pos = true_agent_state
-                next_obs = env.step(step_action)
+                step_action  = plan['actions'][len(visited_states)-1]
+                env.step(step_action)
+                next_obs,_,_ = env.get_obs()
                 step_count += 1
-                next_state = kmeans.predict(next_obs)
+                next_state = kmeans.predict(enc(torch.FloatTensor(next_obs).to(device).unsqueeze(0)).cpu().detach().numpy().tolist())[0]
 
                 # check for cluster switch
                 if next_state != visited_states[-1]:
-                    if plan['state'][len(visited_states)] == next_state:  # check if the plan matches
+                    if plan['states'][len(visited_states)] == next_state:  # check if the plan matches
                         visited_states.append(next_state)
-                        step_action = plan['actions'][len(visited_states)]
                     else:
+                        visited_states.append(next_state)
                         break  # if the next-abstract state does not match with actual plan
 
                 # transition
                 obs = next_obs
-
+           
+                if len(visited_states) == len(plan['states']):
+                    break
+             
             # log success/failure
-            if all(visited_states == plan['states']):
-                print('success')
+            if visited_states == plan['states']:
+                print(f'Success \n\t => Abstract Horizon: {len(plan["states"])} \n\t => Low-Level Steps: {step_count} \n\t => Original Plan: {plan["states"]} \n\t => Executed Plan: {visited_states}')
             else:
-                print('failure')
+                print(f'Failure: \n\t => Abstract Horizon: {len(plan["states"])}  \n\t => Low-Level Steps: {step_count} \n\t => Original Plan: {plan["states"]} \n\t  => Executed Plan: {visited_states}')
 
-        # visualize-plans
-        for plan in abstract_plans:
-            empirical_mdp.visualize_plan(plan)
 
     elif args.opr == 'low-level-plan':
 
