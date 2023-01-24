@@ -406,7 +406,7 @@ if __name__ == '__main__':
         kmeans = pickle.load(open('kmeans.p', 'rb'))
 
         # load-dataset
-        dataset = pickle.load(open('dataset.p', 'rb'))
+        dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
         # generate latent-states and find corresponding label
@@ -428,11 +428,12 @@ if __name__ == '__main__':
                                      action=A,
                                      next_state=next_state,
                                      reward=np.zeros_like(A))
-
+        # save 
+        pickle.dump(empirical_mdp, open('empirical_mdp.p', 'wb'))
         transition_img = empirical_mdp.visualize_transition(save_path=join(field_folder, 'transition_img.png'))
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image(join(field_folder, "transition_img.png"))})
-        pickle.dump(empirical_mdp, open('empirical_mdp.p'))
+            wandb.save(glob_str='empirical_mdp.p', policy="now")
 
     elif args.opr == 'debug-abstract-plans':
         def abstract_path_sampler(empirical_mdp, abstract_horizon):
@@ -470,7 +471,8 @@ if __name__ == '__main__':
         # load-dataset
         dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
-
+        
+        import pdb; pdb.set_trace()
         # generate random plans over abstract states
         abstract_plans = [abstract_path_sampler(empirical_mdp, abstract_horizon=2),
                           abstract_path_sampler(empirical_mdp, abstract_horizon=5),
