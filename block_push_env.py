@@ -22,7 +22,7 @@ class BlockEnv:
         self.agent_pos = [0,0]
         self.block_pos = [1,1]
 
-        self.m = 10
+        self.m = 8
 
         self.exo = np.zeros(shape=(self.m**2,))
         self.exo_ind = random.randint(0,self.m**2 - 1)

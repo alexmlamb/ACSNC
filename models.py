@@ -19,7 +19,6 @@ class AC(nn.Module):
 
         h = self.m(h)
 
-
         loss = ce(h, a)
 
         return loss

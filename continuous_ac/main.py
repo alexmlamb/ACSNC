@@ -83,7 +83,7 @@ if __name__ == '__main__':
     # training args
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
-                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp'])
+                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp', 'trajectory-synthesis'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
@@ -403,6 +403,53 @@ if __name__ == '__main__':
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image("transition_img.png")})
         pickle.dump(empirical_mdp, open('empirical_mdp.p'))
+
+    elif args.opr == 'trajectory-synthesis':
+
+        from trajectory_synthesis import sample_trajectory_batch, TSynth
+
+        dataset = pickle.load(open('dataset.p', 'rb'))
+        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+
+        maxmove = 0
+        for j in range(0, len(ast) - 7):
+            s = torch.Tensor(np.array(ast[j : j + 6]))
+            mm = (s[-1] - s[0]).sum().item()
+            diff = (s[0]).sum().item()
+
+            if mm > maxmove and diff < 0.1:
+                maxmove = mm
+                print(s)
+
+        print('maxmove', maxmove)
+
+        k = 10
+        tsynth = TSynth(dim=2, k=k).cuda()
+        opt = torch.optim.Adam(tsynth.parameters(), lr=0.0001)
+
+        for i in range(0,300000):
+
+            s = sample_trajectory_batch(ast, 256, k)
+            loss,spred = tsynth.loss(s[:,0:1], s[:,-1:], s)
+
+            loss.backward()
+            opt.step()
+            opt.zero_grad()
+
+            if i % 1000 == 0:
+                print('-------------------------')
+                print(i, loss)
+                s0_test = torch.ones((1,2)).cuda() * 0.0
+                sk_test = torch.ones((1,2)).cuda() * 1.0
+
+                traj = tsynth(s0_test, sk_test)
+
+                print('true start', s0_test)
+                print('k', k)
+                print('true end', sk_test)
+
+                print('synth traj')
+                print(traj.reshape((1,k,2)))
 
     elif args.opr == 'low-level-plan':
 

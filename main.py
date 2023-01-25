@@ -1,7 +1,8 @@
 
-from block_pull_env import BlockEnv
-# from block_push_env import BlockEnv
+#from block_pull_env import BlockEnv
+from block_push_env import BlockEnv
 
+import torch.nn.functional as F
 
 from models import Encoder, Probe, AC
 import torch
@@ -67,11 +68,11 @@ if __name__ == "__main__":
 
     env = BlockEnv()
 
-    ac = AC(256, nk=45, nact=5).cuda()
-    enc = Encoder(env. m* *2 * 2, 256).cuda()
-    a_probe = Probe(256, env. m* *2).cuda()
-    b_probe = Probe(256, env. m* *2).cuda()
-    e_probe = Probe(256, env. m* *2).cuda()
+    ac = AC(512, nk=45, nact=5).cuda()
+    enc = Encoder(env.m**2 * 2, 512).cuda()
+    a_probe = Probe(512, env.m**2).cuda()
+    b_probe = Probe(512, env.m**2).cuda()
+    e_probe = Probe(512, env.m**2).cuda()
 
     opt = torch.optim.Adam \
         (list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()))
@@ -84,7 +85,7 @@ if __name__ == "__main__":
 
     import random
     for i in range(0 ,500000):
-        a = random.randint(0 ,4)
+        a = random.randint(0,4)
         # env.render()
 
         x, agent_state, block_state, exo_state = env.get_obs()
@@ -102,14 +103,16 @@ if __name__ == "__main__":
     bst = np.array(bst).astype('int64')
     est = np.array(est).astype('int64')
 
-    for j in range(0, 200000):
+    eave = []
+
+    for j in range(0, 10000):
         xt, xtk, k, a, astate, bstate, estate = sample_batch(X, A, ast, bst, est, 256)
 
         st = enc(xt)
         stk = enc(xtk)
 
-        print(a[10:20])
-        print(astate[10:20])
+        #print(a[10:20])
+        #print(astate[10:20])
 
         ac_loss = ac(st, stk, k, a)
         ap_loss, ap_acc = a_probe(st, astate)
@@ -122,8 +125,77 @@ if __name__ == "__main__":
         opt.step()
         opt.zero_grad()
 
+        if j > 2000:
+            eave.append(ep_acc.item())
+
         if j % 100 == 0:
             print(j, ac_loss.item(), 'A_acc', ap_acc.item(), 'B_acc', bp_acc.item(), 'E_acc', ep_acc.item())
+            if len(eave) > 0:
+                print('exo', sum(eave) / len(eave))
 
+    h = []
+    rewards = []
+    timeout = []
+
+    raise Exception('done')
+
+    A = F.one_hot(torch.Tensor(A).long(), num_classes=5).numpy()
+
+    for j in range(0, 490000, 256):
+        h.append(enc(torch.Tensor(X[j : j+256]).cuda()).data.cpu())
+        
+        for k in range(j,j+256):
+            if ast[k] == 15 and bst[k] == 15:
+                rewards.append(1)
+            else:
+                rewards.append(0)
+
+            if k % 100 == 0:
+                timeout.append(1)
+            else:
+                timeout.append(0)
+
+    h = torch.randn_like(torch.cat(h, dim=0)).numpy()
+
+    terminals = np.zeros(h.shape[0])
+
+    print('h shape', h.shape)
+
+    print('offline-RL time!')
+
+    print('num reward', sum(rewards))
+
+    import d3rlpy
+
+    terminals = np.array(terminals)
+    rewards = np.array(rewards)
+    timeout = np.array(timeout)
+    A = A[:h.shape[0]]
+
+    print(h.shape, A.shape, rewards.shape, terminals.shape, timeout.shape)
+
+    dataset = d3rlpy.dataset.MDPDataset(
+        observations=h,
+        actions=A,
+        rewards=rewards,
+        terminals=terminals,
+        episode_terminals=timeout
+    )
+
+
+    # prepare algorithm
+    cql = d3rlpy.algos.DiscreteCQL(use_gpu=True)
+
+    # train
+    cql.fit(
+        dataset,
+        eval_episodes=dataset,
+        n_epochs=100,
+        scorers={
+            'td_error': d3rlpy.metrics.td_error_scorer,
+            'value_scale': d3rlpy.metrics.average_value_estimation_scorer,
+
+        },
+    )
 
 
