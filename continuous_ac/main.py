@@ -18,7 +18,7 @@ import wandb
 from emprical_mdp import EmpiricalMDP
 from ema_pytorch import EMA
 import os
-
+import copy
 '''
 Sample 100k examples.  
 Write a batch sampler to get (xt, xtk, k, agent_state, block_state).  
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
                             choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp',
-                                     'debug-abstract-plans'])
+                                     'debug-abstract-random-plans'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
@@ -352,15 +352,15 @@ if __name__ == '__main__':
                             'a_probe': a_probe.state_dict(),
                             'b_probe': b_probe.state_dict(),
                             'e_probe': e_probe.state_dict()}, model_path)
-
     elif args.opr == 'cluster-latent':
 
         # load model
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         a_probe.load_state_dict(model['a_probe'])
-        enc.eval()
-        a_probe.eval()
+        enc = enc.eval().to(device)
+        a_probe = a_probe.eval().to(device)
+        
 
         # load-dataset
         dataset = pickle.load(open('data/dataset.p', 'rb'))
@@ -382,15 +382,25 @@ if __name__ == '__main__':
         # clustering
         kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
         predicted_labels = kmeans.predict(latent_states)
-        pickle.dump(kmeans, open('kmeans.p', 'wb'))
+        centroids =  a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
 
         # visualize and save
+        kmean_plot_fig = plt.figure()
         plt.scatter(x=grounded_states[:, 0],
                     y=grounded_states[:, 1],
                     c=predicted_labels,
                     marker='.')
+        plt.scatter(x=centroids[:,0],
+                    y=centroids[:,1], 
+                    marker="*")
+        
+        for centroid_i, centroid in enumerate(centroids):
+            plt.text(centroid[0], centroid[1], str(centroid_i) , horizontalalignment='center',  fontsize=8, color='black')
+             
+        pickle.dump({'kmeans': kmeans, 'kmeans-plot':copy.deepcopy(kmean_plot_fig), 'grounded-cluster-center': centroids}, open('kmeans_info.p', 'wb'))
         plt.savefig(join(field_folder, 'latent_cluster.png'))
         plt.clf()
+        
         plt.scatter(x=grounded_states[:, 0],
                     y=predicted_grounded_states[:, 0],
                     marker='.')
@@ -406,7 +416,10 @@ if __name__ == '__main__':
         enc.eval()
 
         # load clustering
-        kmeans = pickle.load(open('kmeans.p', 'rb'))
+        kmeans_info = pickle.load(open('kmeans_info.p', 'rb'))
+        kmeans = kmeans_info['kmeans']
+        kmeans_fig = kmeans_info['kmeans-plot']
+        grounded_cluster_centers = kmeans_info['grounded-cluster-center']
 
         # load-dataset
         dataset = pickle.load(open(dataset_path, 'rb'))
@@ -431,14 +444,25 @@ if __name__ == '__main__':
                                      action=A,
                                      next_state=next_state,
                                      reward=np.zeros_like(A))
+        import pdb; pdb.set_trace()
+        # draw action vectors on cluster-mdp
+        for cluster_i, cluster_center in enumerate(grounded_cluster_centers):
+            for action in [_ for _ in empirical_mdp.transition[empirical_mdp.unique_states_dict[cluster_i]] if not np.isnan(_).all()]:
+                plt.quiver(cluster_center[0],cluster_center[1], action[0], action[1])
+                print('quiver',cluster_center[0],cluster_center[1], action[0], action[1])
+        plt.savefig(join(field_folder, 'latent_cluster_with_action_vector.png'))
+        plt.clf()
+
+        transition_img = empirical_mdp.visualize_transition(save_path=join(field_folder, 'transition_img.png'))
         # save 
         pickle.dump(empirical_mdp, open('empirical_mdp.p', 'wb'))
-        transition_img = empirical_mdp.visualize_transition(save_path=join(field_folder, 'transition_img.png'))
+        
+        # save
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image(join(field_folder, "transition_img.png"))})
+            # wandb.log({'latent-cluster-with-action-vector': wandb.Image(join(field_folder,'latent_cluster_with_action_vector.png'))})
             wandb.save(glob_str='empirical_mdp.p', policy="now")
-
-    elif args.opr == 'debug-abstract-plans':
+    elif args.opr == 'debug-abstract-random-plans':
         def abstract_path_sampler(empirical_mdp, abstract_horizon):
             plan = {'states': [], 'actions': []}
 
@@ -469,7 +493,10 @@ if __name__ == '__main__':
         empirical_mdp = pickle.load(open('empirical_mdp.p', 'rb'))
 
         # load clustering
-        kmeans = pickle.load(open('kmeans.p', 'rb'))
+        kmeans_info = pickle.load(open('kmeans_info.p', 'rb'))
+        kmeans = kmeans_info['kmeans']
+        # kmeans_fig = kmeans_info['kmeans-plot']
+        grounded_cluster_centers = kmeans_info['grounded-cluster-center']
 
         # load dynamics
         model = torch.load(model_path, map_location=torch.device('cpu'))
@@ -500,7 +527,9 @@ if __name__ == '__main__':
 
         # rollout
         max_rollout_steps = 1000
-        for plan in abstract_plans:
+        debug_plan_plots_dir = os.path.join(os.getcwd(),'debug_plots')
+        os.makedirs(debug_plan_plots_dir, exist_ok=True)
+        for plan_i, plan in enumerate(abstract_plans):
 
             # initial-step
             obs, true_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=plan['states'][0])
@@ -536,19 +565,31 @@ if __name__ == '__main__':
 
             # log success/failure
             if visited_states == plan['states']:
-                print(f'Success: '
+                print(f'{plan_i}:  Success: '
                       f'\n\t => Abstract Horizon: {len(plan["states"])}'
                       f'\n\t => Low-Level Steps: {step_count} '
                       f'\n\t => Original Plan: 'f'{plan["states"]}'
                       f'\n\t => Executed Plan: {visited_states}')
             else:
-                print(f'Failure: '
+                print(f'{plan_i}: Failure: '
                       f'\n\t => Abstract Horizon: {len(plan["states"])}'
                       f'\n\t => Low-Level Steps: {step_count}'
                       f'\n\t => Original Plan: {plan["states"]}'
                       f'\n\t  => Executed Plan: {visited_states}')
+            
+            kmeans_fig = copy.deepcopy(kmeans_info['kmeans-plot'])
+            original_plan_data = np.array([grounded_cluster_centers[x] for x in plan["states"]])
+            plt.plot(original_plan_data[:,0], original_plan_data[:,1], color='black', legend='original-plan')
+            plt.scatter([original_plan_data[0,0]],[original_plan_data[0,1]], marker="o", color='black',)
+            plt.scatter([original_plan_data[-1,0]],[original_plan_data[-1,1]], marker="|", color='black')
+            
+            visited_plan_data = np.array([grounded_cluster_centers[x] for x in visited_states])
+            plt.plot(visited_plan_data[:,0]+ 0.02, visited_plan_data[:,1] + 0.02, color='red', legend='executed-plan')
+            plt.scatter([visited_plan_data[0,0]+ 0.02],[visited_plan_data[0,1]+ 0.02], marker="o", color='red')
+            plt.scatter([visited_plan_data[-1,0]+ 0.02],[visited_plan_data[-1,1]+ 0.02], marker="|", color='red')
 
-
+            plt.savefig(os.path.join(debug_plan_plots_dir, f'{plan_i}.png'))
+            plt.clf()        
     elif args.opr == 'low-level-plan':
 
         model = torch.load('model.p', map_location=torch.device('cpu'))
