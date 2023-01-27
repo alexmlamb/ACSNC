@@ -23,11 +23,11 @@ class EmpiricalMDP:
         for x in np.arange(-0.1, 0.1+0.01, 0.01):
             for y in np.arange(-0.1, 0.1+0.01, 0.01):
                 actions.append((round(x,2), round(y,2)))
-        actions = np.unique(actions, axis=0)
+        self.discrete_action_space = np.unique(actions, axis=0)
 
         # generate discrete transition matrix containing visit count
-        action_value_idx_map = {tuple(val):idx for idx, val in enumerate(actions)}
-        transition = np.zeros((len(self.unique_states), len(actions), len(self.unique_states)))
+        action_value_idx_map = {tuple(val):idx for idx, val in enumerate(self.discrete_action_space)}
+        transition = np.zeros((len(self.unique_states), len(self.discrete_action_space), len(self.unique_states)))
         for state in range(len(self.transition)):
             for next_state, action in enumerate(self.transition[state]):
                 if not np.isnan(action).all():

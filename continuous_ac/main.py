@@ -19,6 +19,7 @@ from emprical_mdp import EmpiricalMDP
 from ema_pytorch import EMA
 import os
 import copy
+from dijkstra import make_ls, DP_goals
 '''
 Sample 100k examples.  
 Write a batch sampler to get (xt, xtk, k, agent_state, block_state).  
@@ -35,6 +36,31 @@ bs_probe
 
 
 '''
+
+def abstract_path_sampler(empirical_mdp, abstract_horizon):
+    plan = {'states': [], 'actions': []}
+
+    init_state = np.random.choice(empirical_mdp.unique_states)
+    plan['states'].append(init_state)
+
+    while len(plan['states']) != abstract_horizon:
+        current_state = plan['states'][-1]
+        next_state_candidates = []
+        for state in empirical_mdp.unique_states:
+            if not np.isnan(empirical_mdp.transition[current_state][state]).all() and state != current_state:
+                next_state_candidates.append(state)
+        next_state = np.random.choice(next_state_candidates)
+        plan['actions'].append(empirical_mdp.transition[current_state, next_state])
+        plan['states'].append(next_state)
+
+    return plan
+
+
+def obs_sampler(dataset_obs, dataset_agent_states, state_labels, abstract_state):
+    _filtered_obs = dataset_obs[state_labels == abstract_state]
+    _filtered_agent_states = dataset_agent_states[state_labels == abstract_state]
+    index = np.random.choice(range(len(_filtered_obs)))
+    return _filtered_obs[index], _filtered_agent_states[index]
 
 
 def sample_example(X, A, ast, est, max_k):
@@ -88,7 +114,7 @@ if __name__ == '__main__':
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
                             choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp',
-                                     'debug-abstract-random-plans'])
+                                     'debug-abstract-random-plans', 'debug-dijkstra-plans'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
@@ -444,7 +470,7 @@ if __name__ == '__main__':
                                      action=A,
                                      next_state=next_state,
                                      reward=np.zeros_like(A))
-        import pdb; pdb.set_trace()
+    
         # draw action vectors on cluster-mdp
         for cluster_i, cluster_center in enumerate(grounded_cluster_centers):
             for action in [_ for _ in empirical_mdp.transition[empirical_mdp.unique_states_dict[cluster_i]] if not np.isnan(_).all()]:
@@ -463,31 +489,6 @@ if __name__ == '__main__':
             # wandb.log({'latent-cluster-with-action-vector': wandb.Image(join(field_folder,'latent_cluster_with_action_vector.png'))})
             wandb.save(glob_str='empirical_mdp.p', policy="now")
     elif args.opr == 'debug-abstract-random-plans':
-        def abstract_path_sampler(empirical_mdp, abstract_horizon):
-            plan = {'states': [], 'actions': []}
-
-            init_state = np.random.choice(empirical_mdp.unique_states)
-            plan['states'].append(init_state)
-
-            while len(plan['states']) != abstract_horizon:
-                current_state = plan['states'][-1]
-                next_state_candidates = []
-                for state in empirical_mdp.unique_states:
-                    if not np.isnan(empirical_mdp.transition[current_state][state]).all() and state != current_state:
-                        next_state_candidates.append(state)
-                next_state = np.random.choice(next_state_candidates)
-                plan['actions'].append(empirical_mdp.transition[current_state, next_state])
-                plan['states'].append(next_state)
-
-            return plan
-
-
-        def obs_sampler(dataset_obs, dataset_agent_states, state_labels, abstract_state):
-            _filtered_obs = dataset_obs[state_labels == abstract_state]
-            _filtered_agent_states = dataset_agent_states[state_labels == abstract_state]
-            index = np.random.choice(range(len(_filtered_obs)))
-            return _filtered_obs[index], _filtered_agent_states[index]
-
 
         # load abstract mdp
         empirical_mdp = pickle.load(open('empirical_mdp.p', 'rb'))
@@ -579,17 +580,104 @@ if __name__ == '__main__':
             
             kmeans_fig = copy.deepcopy(kmeans_info['kmeans-plot'])
             original_plan_data = np.array([grounded_cluster_centers[x] for x in plan["states"]])
-            plt.plot(original_plan_data[:,0], original_plan_data[:,1], color='black', legend='original-plan')
+            plt.plot(original_plan_data[:,0], original_plan_data[:,1], color='black', label='original-plan')
             plt.scatter([original_plan_data[0,0]],[original_plan_data[0,1]], marker="o", color='black',)
-            plt.scatter([original_plan_data[-1,0]],[original_plan_data[-1,1]], marker="|", color='black')
+            plt.scatter([original_plan_data[-1,0]],[original_plan_data[-1,1]], marker="s", color='black')
             
             visited_plan_data = np.array([grounded_cluster_centers[x] for x in visited_states])
-            plt.plot(visited_plan_data[:,0]+ 0.02, visited_plan_data[:,1] + 0.02, color='red', legend='executed-plan')
+            plt.plot(visited_plan_data[:,0]+ 0.02, visited_plan_data[:,1] + 0.02, color='red', label='executed-plan')
             plt.scatter([visited_plan_data[0,0]+ 0.02],[visited_plan_data[0,1]+ 0.02], marker="o", color='red')
-            plt.scatter([visited_plan_data[-1,0]+ 0.02],[visited_plan_data[-1,1]+ 0.02], marker="|", color='red')
+            plt.scatter([visited_plan_data[-1,0]+ 0.02],[visited_plan_data[-1,1]+ 0.02], marker="s", color='red')
 
+            plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=3, fancybox=True, shadow=False)
             plt.savefig(os.path.join(debug_plan_plots_dir, f'{plan_i}.png'))
-            plt.clf()        
+            plt.clf()
+
+    elif args.opr == 'debug-dijkstra-plans':
+        dijkstra_plan_dir = os.path.join(os.getcwd(), 'dijkstra-plans')
+        os.makedirs(dijkstra_plan_dir, exist_ok=True)
+
+        # load abstract mdp
+        empirical_mdp = pickle.load(open('empirical_mdp.p', 'rb'))
+
+        # load clustering
+        kmeans_info = pickle.load(open('kmeans_info.p', 'rb'))
+        kmeans = kmeans_info['kmeans']
+        kmeans_fig = kmeans_info['kmeans-plot']
+        grounded_cluster_centers = kmeans_info['grounded-cluster-center']
+
+        # load dynamics
+        model = torch.load(model_path, map_location=torch.device('cpu'))
+        enc.load_state_dict(model['enc'])
+        enc.eval()
+        
+        # load-dataset
+        dataset = pickle.load(open(dataset_path, 'rb'))
+        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+        X = X[np.abs(A).sum(1) < 0.1]
+        ast = ast[np.abs(A).sum(1) < 0.1]
+        A = A[np.abs(A).sum(1) < 0.1]
+
+
+        num_states, num_actions, _ = empirical_mdp.discrete_transition.shape
+        ls, _ = make_ls(torch.Tensor(empirical_mdp.discrete_transition), num_states, num_actions)
+                
+        for plan_i , (init_state, goal_state, dp_step_use) in enumerate([(1,47,1),
+                                                                         (31,22,1),
+                                                                        (2,39,1),
+                                                                         (12,46,1)]):
+
+            current_state = init_state
+            obs, true_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=init_state)
+            executed_plan = [current_state]
+            max_steps=100
+            step_count = 0
+            distance_to_goal = np.inf
+            obs_history = [copy.deepcopy(true_agent_state)]
+            while current_state != goal_state and step_count < max_steps:
+                step_count +=1
+                distance_to_goal,g,step_action_idx = DP_goals(ls,init_state=current_state, goal_index=goal_state, dp_step=dp_step_use, code2ground={})
+
+                step_action = empirical_mdp.discrete_action_space[step_action_idx]
+
+            
+                env.agent_pos = true_agent_state
+                env.step(step_action)
+                next_obs, next_agent_pos, _ = env.get_obs()
+
+                with torch.no_grad():
+                    _latent_state = enc(torch.FloatTensor(next_obs).to(device).unsqueeze(0)).cpu().numpy().tolist()
+                next_state = kmeans.predict(_latent_state)[0]
+
+                obs = next_obs
+                current_state = next_state
+                true_agent_state = next_agent_pos
+
+                executed_plan.append(current_state)
+                obs_history.append(copy.deepcopy(next_agent_pos))
+
+                print(next_agent_pos)
+                # print('a', step_action)
+                # print('g', g)
+                # print('d', distance_to_goal)
+
+            obs_history = np.array(obs_history)
+           
+            kmeans_fig = copy.deepcopy(kmeans_info['kmeans-plot'])
+            executed_plan_data = np.array([grounded_cluster_centers[x] for x in executed_plan])
+            plt.plot(executed_plan_data[:,0], executed_plan_data[:,1], color='black', label='high-level trajectory')
+            plt.plot(obs_history[:,0], obs_history[:,1], color='pink', label='low-level trajectory')
+            plt.scatter(obs_history[:,0], obs_history[:,1], color='pink')
+
+            init_ground_state_x,init_ground_state_y = grounded_cluster_centers[init_state]
+            goal_ground_state_x,goal_ground_state_y = grounded_cluster_centers[goal_state]
+            plt.scatter([init_ground_state_x],[init_ground_state_y], marker="o", color='red')
+            plt.scatter([goal_ground_state_x],[goal_ground_state_y], marker="s", color='red')
+            plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=3, fancybox=True, shadow=False)
+            plt.savefig(os.path.join(dijkstra_plan_dir, f'{plan_i}.png'))
+            plt.clf()
+            print(executed_plan)
+
     elif args.opr == 'low-level-plan':
 
         model = torch.load('model.p', map_location=torch.device('cpu'))
