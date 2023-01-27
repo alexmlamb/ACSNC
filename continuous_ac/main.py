@@ -570,12 +570,13 @@ if __name__ == '__main__':
                       f'\n\t => Abstract Horizon: {len(plan["states"])}'
                       f'\n\t => Low-Level Steps: {step_count} '
                       f'\n\t => Original Plan: 'f'{plan["states"]}'
-                      f'\n\t => Executed Plan: {visited_states}')
+                      f'\n\t => Executed Plan: {visited_states} \n')
             else:
                 print(f'{plan_i}: Failure: '
                       f'\n\t => Abstract Horizon: {len(plan["states"])}'
                       f'\n\t => Low-Level Steps: {step_count}'
                       f'\n\t => Original Plan: {plan["states"]}'
+<<<<<<< HEAD
                       f'\n\t  => Executed Plan: {visited_states}')
             
             kmeans_fig = copy.deepcopy(kmeans_info['kmeans-plot'])
@@ -605,6 +606,9 @@ if __name__ == '__main__':
         kmeans = kmeans_info['kmeans']
         kmeans_fig = kmeans_info['kmeans-plot']
         grounded_cluster_centers = kmeans_info['grounded-cluster-center']
+=======
+                      f'\n\t  => Executed Plan: {visited_states} \n')
+>>>>>>> fb1c47c8a4c1e91da4b996b386e7d92fb27b38aa
 
         # load dynamics
         model = torch.load(model_path, map_location=torch.device('cpu'))
