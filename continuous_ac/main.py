@@ -20,6 +20,7 @@ from ema_pytorch import EMA
 import os
 import copy
 from dijkstra import make_ls, DP_goals
+
 '''
 Sample 100k examples.  
 Write a batch sampler to get (xt, xtk, k, agent_state, block_state).  
@@ -36,6 +37,7 @@ bs_probe
 
 
 '''
+
 
 def abstract_path_sampler(empirical_mdp, abstract_horizon):
     plan = {'states': [], 'actions': []}
@@ -386,7 +388,6 @@ if __name__ == '__main__':
         a_probe.load_state_dict(model['a_probe'])
         enc = enc.eval().to(device)
         a_probe = a_probe.eval().to(device)
-        
 
         # load-dataset
         dataset = pickle.load(open('data/dataset.p', 'rb'))
@@ -408,7 +409,7 @@ if __name__ == '__main__':
         # clustering
         kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
         predicted_labels = kmeans.predict(latent_states)
-        centroids =  a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
+        centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
 
         # visualize and save
         kmean_plot_fig = plt.figure()
@@ -416,17 +417,19 @@ if __name__ == '__main__':
                     y=grounded_states[:, 1],
                     c=predicted_labels,
                     marker='.')
-        plt.scatter(x=centroids[:,0],
-                    y=centroids[:,1], 
+        plt.scatter(x=centroids[:, 0],
+                    y=centroids[:, 1],
                     marker="*")
-        
+
         for centroid_i, centroid in enumerate(centroids):
-            plt.text(centroid[0], centroid[1], str(centroid_i) , horizontalalignment='center',  fontsize=8, color='black')
-             
-        pickle.dump({'kmeans': kmeans, 'kmeans-plot':copy.deepcopy(kmean_plot_fig), 'grounded-cluster-center': centroids}, open('kmeans_info.p', 'wb'))
+            plt.text(centroid[0], centroid[1], str(centroid_i), horizontalalignment='center', fontsize=8, color='black')
+
+        pickle.dump(
+            {'kmeans': kmeans, 'kmeans-plot': copy.deepcopy(kmean_plot_fig), 'grounded-cluster-center': centroids},
+            open('kmeans_info.p', 'wb'))
         plt.savefig(join(field_folder, 'latent_cluster.png'))
         plt.clf()
-        
+
         plt.scatter(x=grounded_states[:, 0],
                     y=predicted_grounded_states[:, 0],
                     marker='.')
@@ -470,19 +473,20 @@ if __name__ == '__main__':
                                      action=A,
                                      next_state=next_state,
                                      reward=np.zeros_like(A))
-    
+
         # draw action vectors on cluster-mdp
         for cluster_i, cluster_center in enumerate(grounded_cluster_centers):
-            for action in [_ for _ in empirical_mdp.transition[empirical_mdp.unique_states_dict[cluster_i]] if not np.isnan(_).all()]:
-                plt.quiver(cluster_center[0],cluster_center[1], action[0], action[1])
-                print('quiver',cluster_center[0],cluster_center[1], action[0], action[1])
+            for action in [_ for _ in empirical_mdp.transition[empirical_mdp.unique_states_dict[cluster_i]] if
+                           not np.isnan(_).all()]:
+                plt.quiver(cluster_center[0], cluster_center[1], action[0], action[1])
+                print('quiver', cluster_center[0], cluster_center[1], action[0], action[1])
         plt.savefig(join(field_folder, 'latent_cluster_with_action_vector.png'))
         plt.clf()
 
         transition_img = empirical_mdp.visualize_transition(save_path=join(field_folder, 'transition_img.png'))
         # save 
         pickle.dump(empirical_mdp, open('empirical_mdp.p', 'wb'))
-        
+
         # save
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image(join(field_folder, "transition_img.png"))})
@@ -528,7 +532,7 @@ if __name__ == '__main__':
 
         # rollout
         max_rollout_steps = 1000
-        debug_plan_plots_dir = os.path.join(os.getcwd(),'debug_plots')
+        debug_plan_plots_dir = os.path.join(os.getcwd(), 'debug_plots')
         os.makedirs(debug_plan_plots_dir, exist_ok=True)
         for plan_i, plan in enumerate(abstract_plans):
 
@@ -576,19 +580,18 @@ if __name__ == '__main__':
                       f'\n\t => Abstract Horizon: {len(plan["states"])}'
                       f'\n\t => Low-Level Steps: {step_count}'
                       f'\n\t => Original Plan: {plan["states"]}'
-<<<<<<< HEAD
                       f'\n\t  => Executed Plan: {visited_states}')
-            
+
             kmeans_fig = copy.deepcopy(kmeans_info['kmeans-plot'])
             original_plan_data = np.array([grounded_cluster_centers[x] for x in plan["states"]])
-            plt.plot(original_plan_data[:,0], original_plan_data[:,1], color='black', label='original-plan')
-            plt.scatter([original_plan_data[0,0]],[original_plan_data[0,1]], marker="o", color='black',)
-            plt.scatter([original_plan_data[-1,0]],[original_plan_data[-1,1]], marker="s", color='black')
-            
+            plt.plot(original_plan_data[:, 0], original_plan_data[:, 1], color='black', label='original-plan')
+            plt.scatter([original_plan_data[0, 0]], [original_plan_data[0, 1]], marker="o", color='black', )
+            plt.scatter([original_plan_data[-1, 0]], [original_plan_data[-1, 1]], marker="s", color='black')
+
             visited_plan_data = np.array([grounded_cluster_centers[x] for x in visited_states])
-            plt.plot(visited_plan_data[:,0]+ 0.02, visited_plan_data[:,1] + 0.02, color='red', label='executed-plan')
-            plt.scatter([visited_plan_data[0,0]+ 0.02],[visited_plan_data[0,1]+ 0.02], marker="o", color='red')
-            plt.scatter([visited_plan_data[-1,0]+ 0.02],[visited_plan_data[-1,1]+ 0.02], marker="s", color='red')
+            plt.plot(visited_plan_data[:, 0] + 0.02, visited_plan_data[:, 1] + 0.02, color='red', label='executed-plan')
+            plt.scatter([visited_plan_data[0, 0] + 0.02], [visited_plan_data[0, 1] + 0.02], marker="o", color='red')
+            plt.scatter([visited_plan_data[-1, 0] + 0.02], [visited_plan_data[-1, 1] + 0.02], marker="s", color='red')
 
             plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=3, fancybox=True, shadow=False)
             plt.savefig(os.path.join(debug_plan_plots_dir, f'{plan_i}.png'))
@@ -606,15 +609,12 @@ if __name__ == '__main__':
         kmeans = kmeans_info['kmeans']
         kmeans_fig = kmeans_info['kmeans-plot']
         grounded_cluster_centers = kmeans_info['grounded-cluster-center']
-=======
-                      f'\n\t  => Executed Plan: {visited_states} \n')
->>>>>>> fb1c47c8a4c1e91da4b996b386e7d92fb27b38aa
 
         # load dynamics
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
-        
+
         # load-dataset
         dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
@@ -622,29 +622,28 @@ if __name__ == '__main__':
         ast = ast[np.abs(A).sum(1) < 0.1]
         A = A[np.abs(A).sum(1) < 0.1]
 
-
         num_states, num_actions, _ = empirical_mdp.discrete_transition.shape
         ls, _ = make_ls(torch.Tensor(empirical_mdp.discrete_transition), num_states, num_actions)
-                
-        for plan_i , (init_state, goal_state, dp_step_use) in enumerate([(1,47,1),
-                                                                         (31,22,1),
-                                                                        (2,39,1),
-                                                                         (12,46,1)]):
+
+        for plan_i, (init_state, goal_state, dp_step_use) in enumerate([(1, 47, 1),
+                                                                        (31, 22, 1),
+                                                                        (2, 39, 1),
+                                                                        (12, 46, 1)]):
 
             current_state = init_state
             obs, true_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=init_state)
             executed_plan = [current_state]
-            max_steps=100
+            max_steps = 100
             step_count = 0
             distance_to_goal = np.inf
             obs_history = [copy.deepcopy(true_agent_state)]
             while current_state != goal_state and step_count < max_steps:
-                step_count +=1
-                distance_to_goal,g,step_action_idx = DP_goals(ls,init_state=current_state, goal_index=goal_state, dp_step=dp_step_use, code2ground={})
+                step_count += 1
+                distance_to_goal, g, step_action_idx = DP_goals(ls, init_state=current_state, goal_index=goal_state,
+                                                                dp_step=dp_step_use, code2ground={})
 
                 step_action = empirical_mdp.discrete_action_space[step_action_idx]
 
-            
                 env.agent_pos = true_agent_state
                 env.step(step_action)
                 next_obs, next_agent_pos, _ = env.get_obs()
@@ -666,17 +665,17 @@ if __name__ == '__main__':
                 # print('d', distance_to_goal)
 
             obs_history = np.array(obs_history)
-           
+
             kmeans_fig = copy.deepcopy(kmeans_info['kmeans-plot'])
             executed_plan_data = np.array([grounded_cluster_centers[x] for x in executed_plan])
-            plt.plot(executed_plan_data[:,0], executed_plan_data[:,1], color='black', label='high-level trajectory')
-            plt.plot(obs_history[:,0], obs_history[:,1], color='pink', label='low-level trajectory')
-            plt.scatter(obs_history[:,0], obs_history[:,1], color='pink')
+            plt.plot(executed_plan_data[:, 0], executed_plan_data[:, 1], color='black', label='high-level trajectory')
+            plt.plot(obs_history[:, 0], obs_history[:, 1], color='pink', label='low-level trajectory')
+            plt.scatter(obs_history[:, 0], obs_history[:, 1], color='pink')
 
-            init_ground_state_x,init_ground_state_y = grounded_cluster_centers[init_state]
-            goal_ground_state_x,goal_ground_state_y = grounded_cluster_centers[goal_state]
-            plt.scatter([init_ground_state_x],[init_ground_state_y], marker="o", color='red')
-            plt.scatter([goal_ground_state_x],[goal_ground_state_y], marker="s", color='red')
+            init_ground_state_x, init_ground_state_y = grounded_cluster_centers[init_state]
+            goal_ground_state_x, goal_ground_state_y = grounded_cluster_centers[goal_state]
+            plt.scatter([init_ground_state_x], [init_ground_state_y], marker="o", color='red')
+            plt.scatter([goal_ground_state_x], [goal_ground_state_y], marker="s", color='red')
             plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1), ncol=3, fancybox=True, shadow=False)
             plt.savefig(os.path.join(dijkstra_plan_dir, f'{plan_i}.png'))
             plt.clf()
