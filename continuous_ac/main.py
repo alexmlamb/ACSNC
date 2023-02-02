@@ -116,7 +116,7 @@ if __name__ == '__main__':
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
                             choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp',
-                                     'debug-abstract-random-plans', 'debug-dijkstra-plans'])
+                                     'debug-abstract-random-plans', 'debug-dijkstra-plans', 'debug-dijkstra-plans-for-all-states'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
@@ -680,6 +680,59 @@ if __name__ == '__main__':
             plt.savefig(os.path.join(dijkstra_plan_dir, f'{plan_i}.png'))
             plt.clf()
             print(executed_plan)
+
+    elif args.opr == 'debug-dijkstra-plans-for-all-states':
+            dijkstra_plan_dir = os.path.join(os.getcwd(), 'dijkstra-plans-for-all-states')
+            os.makedirs(dijkstra_plan_dir, exist_ok=True)
+
+            # load abstract mdp
+            empirical_mdp = pickle.load(open('empirical_mdp.p', 'rb'))
+
+            # load clustering
+            kmeans_info = pickle.load(open('kmeans_info.p', 'rb'))
+            kmeans = kmeans_info['kmeans']
+            kmeans_fig = kmeans_info['kmeans-plot']
+            grounded_cluster_centers = kmeans_info['grounded-cluster-center']
+
+            # load dynamics
+            model = torch.load(model_path, map_location=torch.device('cpu'))
+            enc.load_state_dict(model['enc'])
+            enc.eval()
+
+            # load-dataset
+            dataset = pickle.load(open(dataset_path, 'rb'))
+            X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+            X = X[np.abs(A).sum(1) < 0.1]
+            ast = ast[np.abs(A).sum(1) < 0.1]
+            A = A[np.abs(A).sum(1) < 0.1]
+
+            num_states, num_actions, _ = empirical_mdp.discrete_transition.shape
+            ls, _ = make_ls(torch.Tensor(empirical_mdp.discrete_transition), num_states, num_actions)
+
+            num_states, num_actions, _ = empirical_mdp.discrete_transition.shape
+            ls, _ = make_ls(torch.Tensor(empirical_mdp.discrete_transition), num_states, num_actions)
+
+            vectors = []
+            for plan_i, (init_state, goal_state, dp_step_use) in enumerate([(_, 47, 1) for _ in range(num_states) if _ !=47]):
+
+                current_state = init_state
+                obs, true_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=init_state)
+                executed_plan = [current_state]
+                max_steps = 100
+                step_count = 0
+                distance_to_goal = np.inf
+                obs_history = [copy.deepcopy(true_agent_state)]
+
+                distance_to_goal, g, step_action_idx = DP_goals(ls, init_state=current_state, goal_index=goal_state,
+                                                                dp_step=dp_step_use, code2ground={})
+
+                step_action = empirical_mdp.discrete_action_space[step_action_idx]
+                plt.quiver(grounded_cluster_centers[init_state][0], grounded_cluster_centers[init_state][1], step_action[0], step_action[1])
+
+            kmeans_fig = copy.deepcopy(kmeans_info['kmeans-plot'])
+            plt.scatter([grounded_cluster_centers[47][0]], [grounded_cluster_centers[47][1]], marker="o", color='red', s=20)
+            plt.savefig(os.path.join(dijkstra_plan_dir, f'action_direction_to_goal_47.png'))
+
 
     elif args.opr == 'low-level-plan':
 
