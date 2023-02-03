@@ -4,6 +4,7 @@ from block_push_env import BlockEnv
 
 import torch.nn.functional as F
 
+from sklearn.cluster import KMeans
 from models import Encoder, Probe, AC
 import torch
 import numpy as np
@@ -75,7 +76,7 @@ if __name__ == "__main__":
     e_probe = Probe(512, env.m**2).cuda()
 
     opt = torch.optim.Adam \
-        (list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()))
+        (list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()), lr=0.0001)
 
     X = []
     A = []
@@ -84,7 +85,7 @@ if __name__ == "__main__":
     est = []
 
     import random
-    for i in range(0 ,500000):
+    for i in range(0 ,1000000):
         a = random.randint(0,4)
         # env.render()
 
@@ -105,11 +106,11 @@ if __name__ == "__main__":
 
     eave = []
 
-    for j in range(0, 10000):
+    for j in range(0, 100000):
         xt, xtk, k, a, astate, bstate, estate = sample_batch(X, A, ast, bst, est, 256)
 
-        st = enc(xt)
-        stk = enc(xtk)
+        st,vql_1 = enc(xt)
+        stk,vql_2 = enc(xtk)
 
         #print(a[10:20])
         #print(astate[10:20])
@@ -119,83 +120,62 @@ if __name__ == "__main__":
         bp_loss, bp_acc = b_probe(st, bstate)
         ep_loss, ep_acc = e_probe(st, estate)
 
-        loss = ac_loss + ap_loss + bp_loss + ep_loss
+        loss = ac_loss + ap_loss + bp_loss + ep_loss + vql_1 + vql_2
         loss.backward()
 
         opt.step()
         opt.zero_grad()
 
-        if j > 2000:
-            eave.append(ep_acc.item())
-
         if j % 100 == 0:
             print(j, ac_loss.item(), 'A_acc', ap_acc.item(), 'B_acc', bp_acc.item(), 'E_acc', ep_acc.item())
-            if len(eave) > 0:
-                print('exo', sum(eave) / len(eave))
 
     h = []
-    rewards = []
-    timeout = []
+    all_astate = []
+    all_bstate = []
 
-    raise Exception('done')
-
-    A = F.one_hot(torch.Tensor(A).long(), num_classes=5).numpy()
+    enc.eval()
 
     for j in range(0, 490000, 256):
-        h.append(enc(torch.Tensor(X[j : j+256]).cuda()).data.cpu())
+        h.append(enc(torch.Tensor(X[j : j+256]).cuda())[0].data.cpu())
         
-        for k in range(j,j+256):
-            if ast[k] == 15 and bst[k] == 15:
-                rewards.append(1)
-            else:
-                rewards.append(0)
+        all_astate.append(torch.Tensor(ast[j : j+256]))
+        all_bstate.append(torch.Tensor(bst[j : j+256]))
 
-            if k % 100 == 0:
-                timeout.append(1)
-            else:
-                timeout.append(0)
+    h = torch.cat(h, dim=0)
 
-    h = torch.randn_like(torch.cat(h, dim=0)).numpy()
+    all_astate = torch.cat(all_astate,dim=0)
+    all_bstate = torch.cat(all_bstate,dim=0)
 
-    terminals = np.zeros(h.shape[0])
+    ns = 1500
+
+    print('kmeans start')
+    kmeans = KMeans(n_clusters=ns, max_iter=300, n_init=10, verbose=1).fit(h)
+    print('kmeans end')
 
     print('h shape', h.shape)
 
-    print('offline-RL time!')
+    na = 5
+    counts = np.zeros((ns,na,ns))
 
-    print('num reward', sum(rewards))
+    c2s = {}
 
-    import d3rlpy
+    for j in range(0, h.shape[0]-1):
+        print('C', kmeans.labels_[j], 'a', A[j], 'A1', (all_astate[j]//env.m).item(), 'A2', (all_astate[j]%env.m).item(), 'B1', (all_bstate[j]//env.m).item(), 'B2', (all_bstate[j]%env.m).item())
 
-    terminals = np.array(terminals)
-    rewards = np.array(rewards)
-    timeout = np.array(timeout)
-    A = A[:h.shape[0]]
+        c2s[kmeans.labels_[j]] = (int((all_astate[j]//env.m).item()), int((all_astate[j]%env.m).item()), int((all_bstate[j]//env.m).item()), int((all_bstate[j]%env.m).item()))
 
-    print(h.shape, A.shape, rewards.shape, terminals.shape, timeout.shape)
+        s = kmeans.labels_[j]
+        sn = kmeans.labels_[j+1]
+        a = A[j]
 
-    dataset = d3rlpy.dataset.MDPDataset(
-        observations=h,
-        actions=A,
-        rewards=rewards,
-        terminals=terminals,
-        episode_terminals=timeout
-    )
+        counts[s, a, sn] += 1
+
+    np.save('counts.npy', counts)
+    import pickle
+    pickle.dump(c2s, open('dict.pkl', 'wb'))
 
 
-    # prepare algorithm
-    cql = d3rlpy.algos.DiscreteCQL(use_gpu=True)
 
-    # train
-    cql.fit(
-        dataset,
-        eval_episodes=dataset,
-        n_epochs=100,
-        scorers={
-            'td_error': d3rlpy.metrics.td_error_scorer,
-            'value_scale': d3rlpy.metrics.average_value_estimation_scorer,
 
-        },
-    )
 
 

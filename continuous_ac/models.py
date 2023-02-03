@@ -102,6 +102,10 @@ class LatentForward(nn.Module):
             self.posterior = nn.Sequential(nn.Linear(dim*2 + nact, 512), nn.LayerNorm(512), nn.LeakyReLU(), nn.Linear(512,512))
             self.decoder = nn.Sequential(nn.Linear(dim + nact + 256, 512), nn.LeakyReLU(), nn.Linear(512,512), nn.LeakyReLU(), nn.Linear(512,dim))
 
+    # zn = forward(z, a)
+    # grad(zn, z) # grad of scalar-output wrt vector-input.  
+    # ILQR get jacobian which is (mxm).  
+
     def forward(self, z, a):
         a = a[:,:2]
         zc = torch.cat([z.detach(),a], dim=1)

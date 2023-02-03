@@ -83,7 +83,7 @@ if __name__ == '__main__':
     # training args
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
-                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp', 'trajectory-synthesis'])
+                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp', 'trajectory-synthesis', 'qplanner'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
@@ -451,6 +451,22 @@ if __name__ == '__main__':
                 print('synth traj')
                 print(traj.reshape((1,k,2)))
 
+    elif args.opr == 'qplanner':
+
+        dataset = pickle.load(open('dataset.p', 'rb'))
+        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+
+        kmeans = KMeans(n_clusters=10, verbose=0).fit(A)
+        print(' K-Means done')
+
+        A = np.concatenate([A, kmeans.labels_.reshape((A.shape[0], 1))], axis=1)
+
+        print('A shape', A.shape)
+
+        from qplan import QPlan
+
+        myq = QPlan()
+
     elif args.opr == 'low-level-plan':
 
         model = torch.load('model.p', map_location=torch.device('cpu'))
@@ -460,3 +476,8 @@ if __name__ == '__main__':
 
     else:
         raise ValueError()
+
+
+
+
+

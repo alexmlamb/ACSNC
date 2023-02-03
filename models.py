@@ -3,6 +3,8 @@ import torch.nn as nn
 
 ce = nn.CrossEntropyLoss()
 
+from vqema import VectorQuantizerEMA
+
 class AC(nn.Module):
     def __init__(self, din, nk, nact):
         super().__init__()
@@ -29,9 +31,13 @@ class Encoder(nn.Module):
 
         self.m = nn.Sequential(nn.Linear(din, 256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256,256), nn.BatchNorm1d(256), nn.LeakyReLU(), nn.Linear(256, dout))
 
-    def forward(self, x):
-        return self.m(x)
+        self.vq = VectorQuantizerEMA(dout, 2048)
 
+    def forward(self, x):
+        h = self.m(x)
+        #h,vq_loss,indices = self.vq(h)
+
+        return h,0.0
 
 class Probe(nn.Module):
     def __init__(self, din, dout):
