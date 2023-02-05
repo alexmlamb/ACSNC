@@ -1,3 +1,2 @@
-data/*
-fields/*
-__pycache__/**
+data/
+fields/
