@@ -1,2 +1,3 @@
-continuous_ac/data
-continuous_ac/fields
+data/*
+fields/*
+__pycache__/**
