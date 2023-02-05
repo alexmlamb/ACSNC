@@ -1,2 +1,3 @@
 data/
-fields/
+fields/ 
+__pycache__
