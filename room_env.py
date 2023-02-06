@@ -80,10 +80,6 @@ class RoomEnv:
 
         x[int(round(self.agent_pos[0] * 100)), int(round(self.agent_pos[1] * 100))] += 1
 
-        # x = self.blur_obs(x)
-
-        # x = np.concatenate([x, self.exo.reshape((self.m,self.m))], axis=1)
-
         exo = [0.0, 0.0]
 
         return x.flatten(), self.agent_pos, exo

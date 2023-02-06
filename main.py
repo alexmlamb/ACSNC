@@ -465,7 +465,6 @@ if __name__ == '__main__':
         next_state = next_state[np.abs(A[:-1]).sum(1) < 0.1]
         states_label = np.array(states_label)[np.abs(A).sum(1) < 0.1]
         A = A[np.abs(A).sum(1) < 0.1]
-
         
         print(states_label.shape, A.shape, next_state.shape)
 

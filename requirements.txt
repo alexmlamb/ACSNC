@@ -2,3 +2,4 @@ nmslib
 numpy
 wandb
 scikit-learn
+autograd
