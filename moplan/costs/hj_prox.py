@@ -8,7 +8,7 @@ def compute_hj_prox(x, t, f, delta=1e-1, int_samples=1000, alpha=2.0,
                     tol_underflow=0.9, device='cpu', verbose=False,
                     return_samples=False):
     """ Estimate proximals from function value sampling via HJ-Prox Algorithm.
-
+        
         Args:
             x (tensor): Input vector
             t (tensor): Time > 0
@@ -16,6 +16,9 @@ def compute_hj_prox(x, t, f, delta=1e-1, int_samples=1000, alpha=2.0,
 
         Returns:
             tensor: Estimate of the proximal of f at x
+
+        Reference: 
+            [A Hamilton-Jacobi-based Proximal Operator](https://arxiv.org/pdf/2211.12997.pdf)
     """
     valid_vector_shape = x.shape[1] == 1 and x.shape[0] >= 1
     assert valid_vector_shape
