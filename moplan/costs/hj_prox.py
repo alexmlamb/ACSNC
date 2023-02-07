@@ -20,8 +20,8 @@ def compute_hj_prox(x, t, f, delta=1e-1, int_samples=1000, alpha=2.0,
         Reference: 
             [A Hamilton-Jacobi-based Proximal Operator](https://arxiv.org/pdf/2211.12997.pdf)
     """
-    valid_vector_shape = x.shape[1] == 1 and x.shape[0] >= 1
-    assert valid_vector_shape
+    valid_tensor_shape = x.shape[1] == 1 and x.shape[0] >= 1
+    assert valid_tensor_shape, "Input tensor shape incorrect."
 
     recursion_depth +=1
     std_dev = np.sqrt(delta * t / alpha)
