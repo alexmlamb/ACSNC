@@ -1,4 +1,5 @@
 from room_env import RoomEnv
+from room_obstacle_env import RoomObstacleEnv
 import matplotlib
 import random
 
@@ -14,6 +15,7 @@ from sklearn.cluster import KMeans
 import wandb
 from emprical_mdp import EmpiricalMDP
 from ema_pytorch import EMA
+
 
 '''
 Sample 100k examples.  
@@ -88,6 +90,8 @@ if __name__ == '__main__':
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
 
+    train_args.add_argument("--env", default='obstacle', choices=['rat', 'room', 'obstacle'])
+
     # process arguments
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -99,7 +103,13 @@ if __name__ == '__main__':
                              for x in train_args._group_actions})
 
     # Train
-    env = RoomEnv()
+    if args.env == 'rat':
+        from rat_env import RatEnvWrapper
+        env = RatEnvWrapper()
+    elif args.env == 'room':
+        env = RoomEnv()
+    elif args.env == 'obstacle':
+        env = RoomObstacleEnv()
 
     ac = AC(din=args.latent_dim, nk=args.k_embedding_dim, nact=2).to(device)
     enc = Encoder(100 * 100, args.latent_dim).to(device)
@@ -117,6 +127,7 @@ if __name__ == '__main__':
         ast = []
         est = []
 
+
         for i in tqdm(range(0, 500000)):
             a = env.random_action()
 
@@ -132,6 +143,10 @@ if __name__ == '__main__':
         A = np.asarray(A).astype('float32')
         ast = np.array(ast).astype('float32')
         est = np.array(est).astype('float32')
+
+        print('X shape', X.shape)
+        print('A shape', A.shape)
+        print('ast/est shapes', ast.shape, est.shape)
 
         pickle.dump({'X': X, 'A': A, 'ast': ast, 'est': est}, open('dataset.p', 'wb'))
 
@@ -315,20 +330,24 @@ if __name__ == '__main__':
     elif args.opr == 'cluster-latent':
 
         # load model
-        model = torch.load('model.p', map_location=torch.device('cpu'))
+        model = torch.load('model.p')#, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         a_probe.load_state_dict(model['a_probe'])
         enc.eval()
         a_probe.eval()
 
+        print('model loaded')
+
         # load-dataset
         dataset = pickle.load(open('dataset.p', 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
+        print('data loaded')
+
         # generate latent-states and ground them
         latent_states = []
         predicted_grounded_states = []
-        for i in range(0, 100000, 256):
+        for i in range(0, min(100000, X.shape[0]), 256):
             with torch.no_grad():
                 _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                 latent_states += _latent_state.cpu().numpy().tolist()
@@ -338,21 +357,27 @@ if __name__ == '__main__':
         grounded_states = np.array(ast[:len(latent_states)])
         latent_states = np.array(latent_states)
 
+        print('about to run kmeans')
+
         # clustering
         kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
         predicted_labels = kmeans.predict(latent_states)
         pickle.dump(kmeans, open('kmeans.p', 'wb'))
+
+        print('kmeans done')
 
         # visualize and save
         plt.scatter(x=grounded_states[:, 0],
                     y=grounded_states[:, 1],
                     c=predicted_labels,
                     marker='.')
+        print('scatter done')
         plt.savefig('latent_cluster.png')
         plt.clf()
         plt.scatter(x=grounded_states[:, 0],
                     y=predicted_grounded_states[:, 0],
                     marker='.')
+        print('scatter2 done')
         plt.savefig('ground_vs_predicted_state.png')
         if args.use_wandb:
             wandb.log({'latent-cluster': wandb.Image("latent_cluster.png"),
@@ -361,7 +386,7 @@ if __name__ == '__main__':
 
     elif args.opr == 'generate-mdp':
         # load model
-        model = torch.load('model.p', map_location=torch.device('cpu'))
+        model = torch.load('model.p')#, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
 

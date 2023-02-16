@@ -78,6 +78,11 @@ class AC(nn.Module):
 
         h = torch.cat([st, stk, ke], dim=1)
 
+        #if self.training:
+        #    mix_alpha = 0.2
+        #    lam = np.random.beta(mix_alpha+1, mix_alpha)
+        #    h = lam*h + (1-lam)*h[torch.randperm(h.shape[0])]
+
         h = self.m(h)
 
         acont_p = self.acont_pred(h)
@@ -201,7 +206,7 @@ class Probe(nn.Module):
 
         #self.enc = nn.Sequential(nn.Linear(din, 512), nn.BatchNorm1d(512), nn.LeakyReLU(), nn.Linear(512,512), nn.BatchNorm1d(512), nn.LeakyReLU(), nn.Linear(512, dout))
 
-        self.enc = nn.Sequential(ResMLP(256), nn.Linear(256, dout))
+        self.enc = nn.Sequential(nn.Linear(din, 256), ResMLP(256), nn.Linear(256, dout))
         #self.enc = nn.Linear(din, dout)
 
     def forward(self, s):
