@@ -111,9 +111,9 @@ class LatentForward(nn.Module):
     # grad(zn, z) # grad of scalar-output wrt vector-input.  
     # ILQR get jacobian which is (mxm).  
 
-    def forward(self, z, a):
+    def forward(self, z, a, detach = True):
         a = a[:,:2]
-        zc = torch.cat([z.detach(),a], dim=1)
+        zc = torch.cat([z.detach() if detach else z, a], dim=1)
 
         if True:
             mu_prior, std_prior = torch.chunk(self.prior(zc), 2, dim=1)

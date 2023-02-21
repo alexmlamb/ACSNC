@@ -15,7 +15,10 @@ from sklearn.cluster import KMeans
 import wandb
 from emprical_mdp import EmpiricalMDP
 from ema_pytorch import EMA
-
+import os
+import copy
+import time
+import torch.nn as nn
 
 '''
 Sample 100k examples.  
@@ -72,7 +75,22 @@ def sample_batch(X, A, ast, est, bs, max_k):
 
     return xt, xtn, xtk, klst, alst, astate, estate
 
+def obs_sampler(dataset_obs, dataset_agent_states, state_labels, abstract_state):
+    _filtered_obs = dataset_obs[state_labels == abstract_state]
+    _filtered_agent_states = dataset_agent_states[state_labels == abstract_state]
+    index = np.random.choice(range(len(_filtered_obs)))
+    return _filtered_obs[index], _filtered_agent_states[index]
 
+
+class LatentWrapper(nn.Module):
+    def __init__(self, latent) -> None:
+        super().__init__()
+        self.latent = latent
+        self.nu = 2
+
+    def forward(self, z, a):
+        return self.latent(z, a, detach = False)
+        
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
@@ -85,12 +103,18 @@ if __name__ == '__main__':
     # training args
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
-                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp', 'trajectory-synthesis', 'qplanner'])
+                            choices=['generate-data', 'train', 'cluster-latent',
+                                     'generate-mdp', 'trajectory-synthesis', 
+                                     'qplanner', 'traj_opt', 'high-low-plan'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
 
     train_args.add_argument("--env", default='obstacle', choices=['rat', 'room', 'obstacle'])
+
+    train_args.add_argument('--exp_id', default = 'test', type = str)
+    train_args.add_argument('--from_to', default = 0, nargs = "+", type = int)
+    train_args.add_argument('--scaling_factor', default = 1.0, type = float)
 
     # process arguments
     args = parser.parse_args()
@@ -120,6 +144,9 @@ if __name__ == '__main__':
     ema_enc = EMA(enc, beta=0.99)
     ema_forward = EMA(forward, beta=0.99)
     ema_a_probe = EMA(a_probe.enc, beta=0.99)
+
+    # SC: for debug
+    args.opr = 'high-low-plan'
 
     if args.opr == 'generate-data':
         X = []
@@ -427,7 +454,8 @@ if __name__ == '__main__':
         transition_img = empirical_mdp.visualize_transition(save_path='transition_img.png')
         if args.use_wandb:
             wandb.log({'mdp': wandb.Image("transition_img.png")})
-        pickle.dump(empirical_mdp, open('empirical_mdp.p'))
+        pickle.dump(empirical_mdp, open('empirical_mdp.p', 'wb'))
+        # torch.save(empirical_mdp, 'empirical_mdp.p')
 
     elif args.opr == 'trajectory-synthesis':
 
@@ -498,6 +526,296 @@ if __name__ == '__main__':
         enc.load_state_dict(model['enc'])
         enc.eval()
 
+    elif args.opr == 'traj_opt':
+        # load abstract mdp
+        mdp_path = os.path.join(os.getcwd(), 'empirical_mdp.p')
+        empirical_mdp = pickle.load(open(mdp_path, 'rb'))
+
+        # load models
+        model_path = os.path.join(os.getcwd(), 'model.p')
+        model = torch.load(model_path, map_location=torch.device('cpu'))
+        enc.load_state_dict(model['enc'])
+        enc.eval()
+
+        forward.load_state_dict(model['forward'])
+        forward.eval()
+
+        a_probe.load_state_dict(model['a_probe'])
+
+        # load clustering
+        kmeans = pickle.load(open('kmeans.p', 'rb'))
+        grounded_cluster_centers = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
+
+        # load-dataset
+        dataset_path = os.path.join(os.getcwd(), 'dataset.p')  
+        dataset = pickle.load(open(dataset_path, 'rb'))
+        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+        X = X[np.abs(A).sum(1) < 0.1]
+        ast = ast[np.abs(A).sum(1) < 0.1]
+        A = A[np.abs(A).sum(1) < 0.1]
+
+        # initialization
+        exp_id = args.exp_id
+        traj_opt_data_path = os.path.join(os.getcwd(), 'traj_opt_data', f'{exp_id}.p')
+        traj_opt_fig_dir = os.path.join(os.getcwd(), 'traj_opt_data')
+
+        # specify start state and goal state
+        from_to = args.from_to
+        if not isinstance(from_to, list):
+            from_to = [42, 44]
+
+        # initial mdp state
+        init_mdp_state = from_to[0]
+        init_obs, init_gt_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=init_mdp_state)
+        init_lat_state = enc(torch.FloatTensor(init_obs).to(device).unsqueeze(0))
+
+        nz = init_lat_state.size(1)
+        nu = ast.shape[1]
+
+        target_mdp_state = from_to[1]
+        target_obs, target_gt_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=target_mdp_state)
+        target_lat_state = enc(torch.FloatTensor(target_obs).to(device).unsqueeze(0))
+        
+        scaling_factor = args.scaling_factor
+        target_lat_state = init_lat_state + scaling_factor*(target_lat_state - init_lat_state)
+        
+        target_gt_agent_state = a_probe(target_lat_state)[0]
+        target_mdp_state = kmeans.predict(target_lat_state.detach().cpu())[0]
+
+        # initialize planning parameters
+        n_batch, T, N = 50, 10, 10
+        u_min, u_max = -0.2, 0.2
+        
+        # latent space dynamics
+        dynamics = LatentWrapper(forward)
+        dynamics.eval() 
+
+        from traj_opt.hj_prox.hj_prox_alg import Tracking_Cost, HJ_Prox_Optimizer
+        tracking_cost_fcn = Tracking_Cost(dynamics, init_lat_state, target_lat_state)
+
+        init_actions = u_min + (u_max - u_min)*torch.rand((n_batch, N, nu)).to(device)
+        torch.save(init_actions, 'temp_init_actions.p')
+        init_actions = torch.load('temp_init_actions.p')
+
+        # closed-loop simulation
+        lat_state_log = torch.zeros((T+1, 1, nz)).to(device)
+        control_log = torch.zeros((T, 1, nu)).to(device)
+        gt_agent_state_log = np.zeros((T+1, init_gt_agent_state.shape[0]))
+        probe_lat_state_log = torch.zeros((T+1, init_gt_agent_state.shape[0])).to(device)
+
+        z_t = init_lat_state
+        lat_state_log[0] = z_t
+        gt_agent_state_log[0] = copy.deepcopy(init_gt_agent_state)
+        probe_lat_state_log[0] = a_probe(init_lat_state)
+
+        mpc_time = []
+        gt_agent_state = copy.deepcopy(init_gt_agent_state)
+
+        t_param = 0.1
+        for t in tqdm(range(T), desc = 'hj_mpc'):
+            start_time = time.time()
+            tracking_cost_fcn = Tracking_Cost(dynamics, z_t, target_lat_state)
+            hj_optimizer = HJ_Prox_Optimizer(tracking_cost_fcn, init_actions, t_param, x_min = u_min, x_max = u_max)
+            output_action, action_list = hj_optimizer.grad_descent(iter_num = 10, x_init = init_actions, t = t_param)
+            
+            rollout_costs = tracking_cost_fcn(output_action)
+            selected_action = output_action[rollout_costs[0].argmin().item()]
+            
+            action = selected_action[0:1, :]
+
+            control_log[t] = action
+
+            print(f'agent state: {gt_agent_state}, goal state: {target_gt_agent_state}')
+            print(f'action: {action}')
+
+            env.agent_pos = gt_agent_state
+            env.step(action[0].detach().cpu().numpy())
+            next_obs, next_agent_pos, _ = env.get_obs() 
+
+            gt_agent_state_log[t+1] = copy.deepcopy(next_agent_pos)
+            gt_agent_state = next_agent_pos
+
+            next_lat_state = enc(torch.FloatTensor(next_obs).unsqueeze(0).to(device))
+            z_t = next_lat_state
+
+            lat_state_log[t+1] = z_t
+
+            # TODO: update u_init in an adaptive manner
+            init_actions = u_min + (u_max - u_min)*torch.rand((n_batch, N, nu)).to(device)
+            init_actions[0,:] = torch.cat((selected_action[1:,:], torch.zeros((1, nu)).to(device)), dim = 0)
+
+            run_time = time.time() - start_time 
+            mpc_time.append(run_time)
+
+        mpc_data = {'grounded_states': gt_agent_state_log, 'actions': control_log, 'mpc_time': mpc_time,
+                    'target_grounded_state': target_gt_agent_state, 'lat_state_log': lat_state_log}
+        torch.save(mpc_data, traj_opt_data_path)
+
+        # plot the trajectory
+        plt.figure()
+        grounded_traj = gt_agent_state_log
+        target_grounded_state_np = target_gt_agent_state.detach().cpu().numpy()
+        action_log = control_log.detach().cpu().numpy()
+
+        # plot the obstacle
+        plt.plot(np.array([0.501, 0.501]), np.array([0.001, 0.401]), color = 'k', linewidth = 4)
+        plt.plot(np.array([0.501, 0.501]), np.array([0.601, 1.01]), color = 'k', linewidth = 4)
+        plt.plot(np.array([0.201, 0.801]), np.array([0.401, 0.401]), color = 'k', linewidth = 4)
+        plt.plot(np.array([0.201, 0.801]), np.array([0.601, 0.601]), color = 'k', linewidth = 4)
+ 
+        plt.plot(grounded_traj[:, 0], grounded_traj[:, 1], color = 'pink', label = 'HJ Prox')
+        plt.scatter(grounded_traj[:, 0], grounded_traj[:, 1], color = 'pink')
+        plt.scatter(grounded_traj[0, 0], grounded_traj[0, 1], marker = 'o', color = 'k', label = 'init')
+        plt.scatter(target_grounded_state_np[0], target_grounded_state_np[1], marker = 's', color = 'r', label = 'target')
+        plt.legend(loc='lower center', ncol=3, fancybox=True, shadow=False)
+        plt.title(f'init. state: {init_mdp_state}, target state: {target_mdp_state}, runtime: {sum(mpc_time)}')
+        # for i in range(grounded_traj.shape[0]-1):
+        #     action = action_log[i, b_num, :]
+        #     plt.quiver(grounded_traj[i, 0], grounded_traj[i, 1], action[0], action[1], scale = 1.0)
+        
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.0])
+
+        plt.savefig(os.path.join(traj_opt_fig_dir, f'{exp_id}.png'))
+        plt.clf()
+
+    elif args.opr == 'high-low-plan':
+        # load abstract mdp
+        mdp_path = os.path.join(os.getcwd(), 'empirical_mdp.p')
+        empirical_mdp = pickle.load(open(mdp_path, 'rb'))
+
+        # load models
+        model_path = os.path.join(os.getcwd(), 'model.p')
+        model = torch.load(model_path, map_location=torch.device('cpu'))
+        enc.load_state_dict(model['enc'])
+        enc.eval()
+
+        forward.load_state_dict(model['forward'])
+        forward.eval()
+
+        a_probe.load_state_dict(model['a_probe'])
+
+        # load clustering
+        kmeans = pickle.load(open('kmeans.p', 'rb'))
+        grounded_cluster_centers = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
+
+        # load-dataset
+        dataset_path = os.path.join(os.getcwd(), 'dataset.p')  
+        dataset = pickle.load(open(dataset_path, 'rb'))
+        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+        X = X[np.abs(A).sum(1) < 0.1]
+        ast = ast[np.abs(A).sum(1) < 0.1]
+        A = A[np.abs(A).sum(1) < 0.1]
+
+        # initialization
+        exp_id = args.exp_id
+        traj_opt_data_path = os.path.join(os.getcwd(), 'traj_opt_data', f'{exp_id}.p')
+        traj_opt_fig_dir = os.path.join(os.getcwd(), 'traj_opt_data')
+
+        # specify start state and goal state
+        from_to = args.from_to
+        if not isinstance(from_to, list):
+            from_to = [22, 44]
+
+        # initial mdp state
+        init_mdp_state = from_to[0]
+        init_obs, init_gt_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=init_mdp_state)
+        init_lat_state = enc(torch.FloatTensor(init_obs).to(device).unsqueeze(0))
+
+        nz = init_lat_state.size(1)
+        nu = ast.shape[1]
+
+        target_mdp_state = from_to[1]
+        target_obs, target_gt_agent_state = obs_sampler(X, ast, empirical_mdp.state, abstract_state=target_mdp_state)
+        target_lat_state = enc(torch.FloatTensor(target_obs).to(device).unsqueeze(0))
+        
+        scaling_factor = args.scaling_factor
+        target_lat_state = init_lat_state + scaling_factor*(target_lat_state - init_lat_state)
+        
+        target_gt_agent_state = a_probe(target_lat_state)[0]
+        target_mdp_state = kmeans.predict(target_lat_state.detach().cpu())[0]
+
+        # dijkstra method parameters
+        num_states, num_actions, _ = empirical_mdp.discrete_transition.shape
+        from dijkstra import make_ls, DP_goals
+        ls, _ = make_ls(torch.Tensor(empirical_mdp.discrete_transition), num_states, num_actions)
+
+        dp_step_use = 1
+        executed_mdp_plan = [init_mdp_state]
+        distance_to_goal = np.inf 
+
+        current_state = init_mdp_state
+        distance_to_goal, g, step_action_idx = DP_goals(ls, init_state=current_state, goal_index=target_mdp_state,
+                                                                dp_step=dp_step_use, code2ground={})
+        
+        # initialize low level planning parameters
+        n_batch, T, N = 10, 10, 3
+        u_min, u_max = -0.2, 0.2
+        
+        # latent space dynamics
+        dynamics = LatentWrapper(forward)
+        dynamics.eval() 
+
+        from traj_opt.hj_prox.hj_prox_alg import Tracking_Cost, HJ_Prox_Optimizer
+        tracking_cost_fcn = Tracking_Cost(dynamics, init_lat_state, target_lat_state)
+
+        init_actions = u_min + (u_max - u_min)*torch.rand((n_batch, N, nu)).to(device)
+        torch.save(init_actions, 'temp_init_actions.p')
+        init_actions = torch.load('temp_init_actions.p')
+
+        # closed-loop simulation
+        lat_state_log = torch.zeros((T+1, 1, nz)).to(device)
+        control_log = torch.zeros((T, 1, nu)).to(device)
+        gt_agent_state_log = np.zeros((T+1, init_gt_agent_state.shape[0]))
+        probe_lat_state_log = torch.zeros((T+1, init_gt_agent_state.shape[0])).to(device)
+
+        z_t = init_lat_state
+        lat_state_log[0] = z_t
+        gt_agent_state_log[0] = copy.deepcopy(init_gt_agent_state)
+        probe_lat_state_log[0] = a_probe(init_lat_state)
+
+        mpc_time = []
+        gt_agent_state = copy.deepcopy(init_gt_agent_state)
+
+        t_param = 0.1
+        for t in tqdm(range(T), desc = 'hj_mpc'):
+            start_time = time.time()
+            tracking_cost_fcn = Tracking_Cost(dynamics, z_t, target_lat_state)
+            hj_optimizer = HJ_Prox_Optimizer(tracking_cost_fcn, init_actions, t_param, x_min = u_min, x_max = u_max)
+            output_action, action_list = hj_optimizer.grad_descent(iter_num = 10, x_init = init_actions, t = t_param)
+            
+            rollout_costs = tracking_cost_fcn(output_action)
+            selected_action = output_action[rollout_costs[0].argmin().item()]
+            
+            action = selected_action[0:1, :]
+
+            control_log[t] = action
+
+            print(f'agent state: {gt_agent_state}, goal state: {target_gt_agent_state}')
+            print(f'action: {action}')
+
+            env.agent_pos = gt_agent_state
+            env.step(action[0].detach().cpu().numpy())
+            next_obs, next_agent_pos, _ = env.get_obs() 
+
+            gt_agent_state_log[t+1] = copy.deepcopy(next_agent_pos)
+            gt_agent_state = next_agent_pos
+
+            next_lat_state = enc(torch.FloatTensor(next_obs).unsqueeze(0).to(device))
+            z_t = next_lat_state
+
+            lat_state_log[t+1] = z_t
+
+            # TODO: update u_init in an adaptive manner
+            init_actions = u_min + (u_max - u_min)*torch.rand((n_batch, N, nu)).to(device)
+            init_actions[0,:] = torch.cat((selected_action[1:,:], torch.zeros((1, nu)).to(device)), dim = 0)
+
+            run_time = time.time() - start_time 
+            mpc_time.append(run_time)
+
+        mpc_data = {'grounded_states': gt_agent_state_log, 'actions': control_log, 'mpc_time': mpc_time,
+                    'target_grounded_state': target_gt_agent_state, 'lat_state_log': lat_state_log}
+        torch.save(mpc_data, traj_opt_data_path)
 
     else:
         raise ValueError()

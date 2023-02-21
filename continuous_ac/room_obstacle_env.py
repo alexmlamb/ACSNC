@@ -18,7 +18,7 @@ import torch
 
 import shapely
 from shapely.geometry import LineString, Point
-
+import copy
 
 def div_cast(x, m=100):
     for i in range(len(x)):
@@ -39,9 +39,6 @@ def obs_check(obstacle, otype, before_pos, agent_pos):
         print('obstacle', obstacle)
         print('before-pos', before_pos)
         print('agent-pos', agent_pos)
-
-        
-
         raise Exception('done')
 
     if not 'EMPTY' in str(intersect) and not 'LINESTRING' in str(intersect):
@@ -50,8 +47,8 @@ def obs_check(obstacle, otype, before_pos, agent_pos):
                 delta = -0.01
             else:
                 delta = 0.01
-
             agent_pos[0] = div_cast([intersect.x])[0] + delta
+
         elif otype == 'horizontal':
             if before_pos[1] <= agent_pos[1]:
                 delta = -0.01
@@ -65,6 +62,61 @@ def obs_check(obstacle, otype, before_pos, agent_pos):
         #agent_pos[1] = intersect.y + delta
 
     return agent_pos[:]
+    
+def obstacle_detection(obs_list, otype_list, before_pos, agent_pos):
+    # find intersections of obstacles and the movement ray, and pick the closest intersection to the starting point
+    n = len(obs_list)
+    agent_ray = LineString([(before_pos[0], before_pos[1]), (agent_pos[0], agent_pos[1])])
+
+    intersections = []
+    intersection_type = []
+    for i in range(n):
+        obstacle = obs_list[i]
+        intersect = obstacle.intersection(agent_ray)
+
+        if not 'EMPTY' in str(intersect) and 'LINESTRING' in str(intersect):
+            print('intersect', intersect)
+            print('obstacle', obstacle)
+            print('before-pos', before_pos)
+            print('agent-pos', agent_pos)
+            raise Exception('done')
+
+        if not 'EMPTY' in str(intersect) and not 'LINESTRING' in str(intersect):
+            intersections.append(np.array([intersect.x, intersect.y]).astype(agent_pos.dtype))
+            intersection_type.append(otype_list[i])
+
+    if len(intersections) == 0:
+        return agent_pos 
+    else:
+        diff = [np.linalg.norm(item - before_pos, 2) for item in intersections]
+        inter_sec_idx = np.argmin(diff)
+        inter_sec = intersections[inter_sec_idx]
+        otype = intersection_type[inter_sec_idx]
+        
+        update_pos = div_cast(inter_sec)
+        if otype == 'vertical':
+            if before_pos[0] <= agent_pos[0]:
+                delta = -0.01
+            else:
+                delta = 0.01
+            update_pos[0] = update_pos[0] + delta
+
+        elif otype == 'horizontal':
+            if before_pos[1] <= agent_pos[1]:
+                delta = -0.01
+            else:
+                delta = 0.01
+            update_pos[1] = update_pos[1] + delta
+        else:
+            raise Exception() 
+
+        return update_pos
+
+        
+
+
+
+
 
 
 class RoomObstacleEnv:
@@ -84,7 +136,7 @@ class RoomObstacleEnv:
 
         self.agent_pos = self.agent_pos[:]
 
-        before_pos = self.agent_pos[:]
+        before_pos = copy.deepcopy(self.agent_pos[:])
 
         self.agent_pos = div_cast(self.agent_pos)
 
@@ -103,8 +155,11 @@ class RoomObstacleEnv:
 
         obs_lst = []
         #obs_lst.append(LineString([(0.63,0.25), (0.63, 0.75)]))
-        obs_lst.append(LineString([(0.501,0.001), (0.501, 0.401)]))
-        obs_lst.append(LineString([(0.501,0.601), (0.501, 1.01)]))
+
+        # SC: extend the wall by delta to avoid numerical errors
+        delta = 0.005
+        obs_lst.append(LineString([(0.501,0.001 - delta), (0.501, 0.401 + delta)]))
+        obs_lst.append(LineString([(0.501,0.601 - delta), (0.501, 1.01 + delta)]))
         obs_lst.append(LineString([(0.201,0.401), (0.801, 0.401)]))
         obs_lst.append(LineString([(0.201,0.601), (0.801, 0.601)]))
 
@@ -122,8 +177,10 @@ class RoomObstacleEnv:
         #    self.agent_pos[0] = intersect.x + delta
         #    self.agent_pos[1] = intersect.y + delta
 
-        for j in range(len(obs_lst)):
-            self.agent_pos = obs_check(obs_lst[j], otype_lst[j], before_pos, self.agent_pos)
+        self.agent_pos = obstacle_detection(obs_lst, otype_lst, before_pos, self.agent_pos)
+
+        # for j in range(len(obs_lst)):
+        #     self.agent_pos = obs_check(obs_lst[j], otype_lst[j], before_pos, self.agent_pos)
 
         self.agent_pos = div_cast(self.agent_pos)[:]
 
@@ -146,7 +203,7 @@ class RoomObstacleEnv:
     def get_obs(self):
         x = np.zeros(shape=(100, 100))
 
-        x[int(round(self.agent_pos[0] * 100)), int(round(self.agent_pos[1] * 100))] += 1
+        x[min(99, int(round(self.agent_pos[0] * 100))), min(99, int(round(self.agent_pos[1] * 100)))] += 1
 
         # x = self.blur_obs(x)
 
