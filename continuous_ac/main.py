@@ -16,7 +16,6 @@ import wandb
 from emprical_mdp import EmpiricalMDP
 from ema_pytorch import EMA
 
-
 '''
 Sample 100k examples.  
 Write a batch sampler to get (xt, xtk, k, agent_state, block_state).  
@@ -85,10 +84,13 @@ if __name__ == '__main__':
     # training args
     train_args = parser.add_argument_group('wandb setup')
     train_args.add_argument("--opr", default="generate-data",
-                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp', 'trajectory-synthesis', 'qplanner'])
+                            choices=['generate-data', 'train', 'cluster-latent', 'generate-mdp', 'trajectory-synthesis',
+                                     'qplanner'])
     train_args.add_argument("--latent-dim", default=256, type=int)
+    train_args.add_argument("--num-data-samples", default=500000, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
+    train_args.add_argument("--do-mixup", action='store_true', defalut=False)
 
     train_args.add_argument("--env", default='obstacle', choices=['rat', 'room', 'obstacle'])
 
@@ -105,6 +107,7 @@ if __name__ == '__main__':
     # Train
     if args.env == 'rat':
         from rat_env import RatEnvWrapper
+
         env = RatEnvWrapper()
     elif args.env == 'room':
         env = RoomEnv()
@@ -127,8 +130,7 @@ if __name__ == '__main__':
         ast = []
         est = []
 
-
-        for i in tqdm(range(0, 500000)):
+        for i in tqdm(range(0, args.num_data_samples)):
             a = env.random_action()
 
             x, agent_state, exo_state = env.get_obs()
@@ -160,6 +162,8 @@ if __name__ == '__main__':
                                + list(b_probe.parameters())
                                + list(forward.parameters()), lr=0.0001)
 
+        print('Num samples', X.shape[0])
+
         print('Run K-mneas')
         kmeans = KMeans(n_clusters=20, verbose=1).fit(A)
         print(' K-Means done')
@@ -180,12 +184,12 @@ if __name__ == '__main__':
             # sjoin = enc(xjoin)
             # st, stn, stk = torch.chunk(sjoin, 3, dim=0)
 
-            do_bn = (j < 5000)
+            # do_bn = (j < 5000)
 
-            st = enc(xt, do_bn)
-            stk = enc(xtk, do_bn)
+            st = enc(xt)
+            stk = enc(xtk)
 
-            stn = enc(xtn, do_bn)
+            stn = enc(xtn)
 
             ac_loss = ac(st, stk, k, a)
             ap_loss, ap_abserr = a_probe.loss(st, astate)
@@ -195,7 +199,24 @@ if __name__ == '__main__':
 
             # raise Exception()
 
-            loss = ac_loss + ap_loss + ep_loss + z_loss
+            loss = 0
+
+            if args.do_mixup:
+                # add probing loss in mixed hidden states.
+                mix_lamb = random.uniform(0, 1)
+                mix_ind = torch.randperm(st.shape[0])
+
+                st_mix = st * mix_lamb + st[mix_ind] * (1 - mix_lamb)
+                # astate_mix = astate*mix_lamb + astate[mix_ind]*(1-mix_lamb)
+                # ap_loss_mix, _ = a_probe.loss(st_mix, astate_mix)
+                # loss += ap_loss_mix
+
+                stn_mix = stn * mix_lamb + stn[mix_ind] * (1 - mix_lamb)
+                z_loss_mix, _ = forward.loss(st_mix, stn_mix, a, do_detach=False)
+
+                loss += z_loss_mix
+
+            loss += ac_loss + ap_loss + ep_loss + z_loss
             loss.backward()
 
             opt.step()
@@ -206,7 +227,8 @@ if __name__ == '__main__':
             ema_enc.update()
 
             if j % 100 == 0:
-                print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss', z_loss.item())
+                print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss',
+                      z_loss.item())
                 if args.use_wandb:
                     wandb.log(
                         {'update': j,
@@ -222,6 +244,7 @@ if __name__ == '__main__':
             ema_a_probe.eval()
             ema_forward.eval()
             ema_enc.eval()
+
 
             def vectorplot(a_use, name):
 
@@ -330,7 +353,7 @@ if __name__ == '__main__':
     elif args.opr == 'cluster-latent':
 
         # load model
-        model = torch.load('model.p')#, map_location=torch.device('cpu'))
+        model = torch.load('model.p')  # , map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         a_probe.load_state_dict(model['a_probe'])
         enc.eval()
@@ -386,7 +409,7 @@ if __name__ == '__main__':
 
     elif args.opr == 'generate-mdp':
         # load model
-        model = torch.load('model.p')#, map_location=torch.device('cpu'))
+        model = torch.load('model.p')  # , map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
 
@@ -405,7 +428,6 @@ if __name__ == '__main__':
                 latent_states += _latent_state.cpu().numpy().tolist()
                 states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
 
-
         next_state = np.array(states_label[1:])
         next_state = next_state[np.abs(A[:-1]).sum(1) < 0.1]
         states_label = np.array(states_label)[np.abs(A).sum(1) < 0.1]
@@ -418,11 +440,10 @@ if __name__ == '__main__':
                                      next_state=next_state,
                                      reward=np.zeros_like(A))
 
-        #empirical_mdp = EmpiricalMDP(state=np.array(states_label)[:-1],
+        # empirical_mdp = EmpiricalMDP(state=np.array(states_label)[:-1],
         #                             action=A[:-1],
         #                             next_state=np.array(states_label)[1:],
         #                             reward=np.zeros_like(A[:-1]))
-
 
         transition_img = empirical_mdp.visualize_transition(save_path='transition_img.png')
         if args.use_wandb:
@@ -438,7 +459,7 @@ if __name__ == '__main__':
 
         maxmove = 0
         for j in range(0, len(ast) - 7):
-            s = torch.Tensor(np.array(ast[j : j + 6]))
+            s = torch.Tensor(np.array(ast[j: j + 6]))
             mm = (s[-1] - s[0]).sum().item()
             diff = (s[0]).sum().item()
 
@@ -452,10 +473,10 @@ if __name__ == '__main__':
         tsynth = TSynth(dim=2, k=k).cuda()
         opt = torch.optim.Adam(tsynth.parameters(), lr=0.0001)
 
-        for i in range(0,300000):
+        for i in range(0, 300000):
 
             s = sample_trajectory_batch(ast, 256, k)
-            loss,spred = tsynth.loss(s[:,0:1], s[:,-1:], s)
+            loss, spred = tsynth.loss(s[:, 0:1], s[:, -1:], s)
 
             loss.backward()
             opt.step()
@@ -464,8 +485,8 @@ if __name__ == '__main__':
             if i % 1000 == 0:
                 print('-------------------------')
                 print(i, loss)
-                s0_test = torch.ones((1,2)).cuda() * 0.0
-                sk_test = torch.ones((1,2)).cuda() * 1.0
+                s0_test = torch.ones((1, 2)).cuda() * 0.0
+                sk_test = torch.ones((1, 2)).cuda() * 1.0
 
                 traj = tsynth(s0_test, sk_test)
 
@@ -474,7 +495,7 @@ if __name__ == '__main__':
                 print('true end', sk_test)
 
                 print('synth traj')
-                print(traj.reshape((1,k,2)))
+                print(traj.reshape((1, k, 2)))
 
     elif args.opr == 'qplanner':
 
@@ -501,8 +522,3 @@ if __name__ == '__main__':
 
     else:
         raise ValueError()
-
-
-
-
-
