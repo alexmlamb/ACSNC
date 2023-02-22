@@ -126,10 +126,13 @@ class LatentForward(nn.Module):
 
         return zpred
 
-    def loss(self, z, zn, a):
+    def loss(self, z, zn, a, do_detach=True):
         a = a[:,:2]
 
-        #zn = zn.detach()
+        if do_detach:
+            detach_fn = lambda inp: inp.detach()
+        else:
+            detach_fn = lambda inp: inp
 
         zc = torch.cat([z,a], dim=1)
         zpred = self.net(zc)
@@ -137,16 +140,16 @@ class LatentForward(nn.Module):
         loss = 0.0
 
         if True:
-            mu_prior, std_prior = torch.chunk(self.prior(zc.detach()), 2, dim=1)
-            mu_posterior, std_posterior = torch.chunk(self.posterior(torch.cat([zc.detach(), zn.detach()], dim=1)), 2, dim=1)
+            mu_prior, std_prior = torch.chunk(self.prior(detach_fn(zc)), 2, dim=1)
+            mu_posterior, std_posterior = torch.chunk(self.posterior(torch.cat([detach_fn(zc), detach_fn(zn)], dim=1)), 2, dim=1)
             std_prior = torch.exp(std_prior)
             std_posterior = torch.exp(std_posterior)
             prior = torch.distributions.normal.Normal(mu_prior, std_prior)
             posterior = torch.distributions.normal.Normal(mu_posterior, std_posterior)
             kl_loss = torch.distributions.kl_divergence(posterior, prior).sum(dim=-1).mean()
             sample = posterior.rsample()
-            zpred = self.decoder(torch.cat([zc.detach(), sample], dim=1))
-            zn = zn.detach()
+            zpred = self.decoder(torch.cat([detach_fn(zc), sample], dim=1))
+            zn = detach_fn(zn)
             loss += kl_loss * 0.01
         else:
             zpred = self.forward(z, a)
@@ -171,7 +174,7 @@ class Encoder(nn.Module):
 
         self.m = nn.Sequential(nn.Linear(32*4*4*2, 256), nn.LeakyReLU(), nn.Linear(256, dout))
 
-    def forward(self, x, do_bn=False):
+    def forward(self, x):
 
         x = x.reshape((x.shape[0], 1, 100, 100))
 

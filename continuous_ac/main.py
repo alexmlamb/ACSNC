@@ -121,6 +121,9 @@ if __name__ == '__main__':
     ema_forward = EMA(forward, beta=0.99)
     ema_a_probe = EMA(a_probe.enc, beta=0.99)
 
+    #ac = torch.jit.script(ac)
+    #enc = torch.jit.script(enc)
+
     if args.opr == 'generate-data':
         X = []
         A = []
@@ -128,7 +131,7 @@ if __name__ == '__main__':
         est = []
 
 
-        for i in tqdm(range(0, 500000)):
+        for i in tqdm(range(0, 10000)):
             a = env.random_action()
 
             x, agent_state, exo_state = env.get_obs()
@@ -160,6 +163,8 @@ if __name__ == '__main__':
                                + list(b_probe.parameters())
                                + list(forward.parameters()), lr=0.0001)
 
+        print('Num samples', X.shape[0])
+
         print('Run K-mneas')
         kmeans = KMeans(n_clusters=20, verbose=1).fit(A)
         print(' K-Means done')
@@ -180,12 +185,12 @@ if __name__ == '__main__':
             # sjoin = enc(xjoin)
             # st, stn, stk = torch.chunk(sjoin, 3, dim=0)
 
-            do_bn = (j < 5000)
+            #do_bn = (j < 5000)
 
-            st = enc(xt, do_bn)
-            stk = enc(xtk, do_bn)
+            st = enc(xt)
+            stk = enc(xtk)
 
-            stn = enc(xtn, do_bn)
+            stn = enc(xtn)
 
             ac_loss = ac(st, stk, k, a)
             ap_loss, ap_abserr = a_probe.loss(st, astate)
@@ -195,7 +200,25 @@ if __name__ == '__main__':
 
             # raise Exception()
 
-            loss = ac_loss + ap_loss + ep_loss + z_loss
+            loss = 0
+
+            do_mixup = False
+            if do_mixup:
+                #add probing loss in mixed hidden states.  
+                mix_lamb = random.uniform(0,1)
+                mix_ind = torch.randperm(st.shape[0])
+
+                st_mix = st*mix_lamb + st[mix_ind]*(1-mix_lamb)
+                #astate_mix = astate*mix_lamb + astate[mix_ind]*(1-mix_lamb)
+                #ap_loss_mix, _ = a_probe.loss(st_mix, astate_mix)
+                #loss += ap_loss_mix
+
+                stn_mix = stn*mix_lamb + stn[mix_ind]*(1-mix_lamb)
+                z_loss_mix, _ = forward.loss(st_mix, stn_mix, a, do_detach=False)
+
+                loss += z_loss_mix
+
+            loss += ac_loss + ap_loss + ep_loss + z_loss
             loss.backward()
 
             opt.step()
