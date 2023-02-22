@@ -1,5 +1,4 @@
-
-#from block_pull_env import BlockEnv
+# from block_pull_env import BlockEnv
 from block_push_env import BlockEnv
 
 import torch.nn.functional as F
@@ -26,16 +25,17 @@ bs_probe
 
 '''
 
+
 def sample_example(X, A, ast, bst, est):
     N = X.shape[0]
     maxk = 40
     t = random.randint(0, N - maxk - 1)
     k = random.randint(1, maxk)
 
-    return (X[t], X[ t +k], k, A[t], ast[t], bst[t], est[t])
+    return (X[t], X[t + k], k, A[t], ast[t], bst[t], est[t])
+
 
 def sample_batch(X, A, ast, bst, est, bs):
-
     xt = []
     xtk = []
     klst = []
@@ -54,7 +54,6 @@ def sample_batch(X, A, ast, bst, est, bs):
         bstate.append(lst[5])
         estate.append(lst[6])
 
-
     xt = torch.Tensor(np.array(xt)).cuda()
     xtk = torch.Tensor(np.array(xtk)).cuda()
     klst = torch.Tensor(np.array(klst)).long().cuda()
@@ -65,18 +64,20 @@ def sample_batch(X, A, ast, bst, est, bs):
 
     return xt, xtk, klst, alst, astate, bstate, estate
 
+
 if __name__ == "__main__":
 
     env = BlockEnv()
 
     ac = AC(512, nk=45, nact=5).cuda()
-    enc = Encoder(env.m**2 * 2, 512).cuda()
-    a_probe = Probe(512, env.m**2).cuda()
-    b_probe = Probe(512, env.m**2).cuda()
-    e_probe = Probe(512, env.m**2).cuda()
+    enc = Encoder(env.m ** 2 * 2, 512).cuda()
+    a_probe = Probe(512, env.m ** 2).cuda()
+    b_probe = Probe(512, env.m ** 2).cuda()
+    e_probe = Probe(512, env.m ** 2).cuda()
 
     opt = torch.optim.Adam \
-        (list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()), lr=0.0001)
+        (list(ac.parameters()) + list(enc.parameters()) + list(a_probe.parameters()) + list(b_probe.parameters()),
+         lr=0.0001)
 
     X = []
     A = []
@@ -85,8 +86,9 @@ if __name__ == "__main__":
     est = []
 
     import random
-    for i in range(0 ,1000000):
-        a = random.randint(0,4)
+
+    for i in range(0, 1000000):
+        a = random.randint(0, 4)
         # env.render()
 
         x, agent_state, block_state, exo_state = env.get_obs()
@@ -109,11 +111,11 @@ if __name__ == "__main__":
     for j in range(0, 100000):
         xt, xtk, k, a, astate, bstate, estate = sample_batch(X, A, ast, bst, est, 256)
 
-        st,vql_1 = enc(xt)
-        stk,vql_2 = enc(xtk)
+        st, vql_1 = enc(xt)
+        stk, vql_2 = enc(xtk)
 
-        #print(a[10:20])
-        #print(astate[10:20])
+        # print(a[10:20])
+        # print(astate[10:20])
 
         ac_loss = ac(st, stk, k, a)
         ap_loss, ap_acc = a_probe(st, astate)
@@ -136,15 +138,15 @@ if __name__ == "__main__":
     enc.eval()
 
     for j in range(0, 490000, 256):
-        h.append(enc(torch.Tensor(X[j : j+256]).cuda())[0].data.cpu())
-        
-        all_astate.append(torch.Tensor(ast[j : j+256]))
-        all_bstate.append(torch.Tensor(bst[j : j+256]))
+        h.append(enc(torch.Tensor(X[j: j + 256]).cuda())[0].data.cpu())
+
+        all_astate.append(torch.Tensor(ast[j: j + 256]))
+        all_bstate.append(torch.Tensor(bst[j: j + 256]))
 
     h = torch.cat(h, dim=0)
 
-    all_astate = torch.cat(all_astate,dim=0)
-    all_bstate = torch.cat(all_bstate,dim=0)
+    all_astate = torch.cat(all_astate, dim=0)
+    all_bstate = torch.cat(all_bstate, dim=0)
 
     ns = 1500
 
@@ -155,27 +157,26 @@ if __name__ == "__main__":
     print('h shape', h.shape)
 
     na = 5
-    counts = np.zeros((ns,na,ns))
+    counts = np.zeros((ns, na, ns))
 
     c2s = {}
 
-    for j in range(0, h.shape[0]-1):
-        print('C', kmeans.labels_[j], 'a', A[j], 'A1', (all_astate[j]//env.m).item(), 'A2', (all_astate[j]%env.m).item(), 'B1', (all_bstate[j]//env.m).item(), 'B2', (all_bstate[j]%env.m).item())
+    for j in range(0, h.shape[0] - 1):
+        print('C', kmeans.labels_[j], 'a', A[j], 'A1', (all_astate[j] // env.m).item(), 'A2',
+              (all_astate[j] % env.m).item(), 'B1', (all_bstate[j] // env.m).item(), 'B2',
+              (all_bstate[j] % env.m).item())
 
-        c2s[kmeans.labels_[j]] = (int((all_astate[j]//env.m).item()), int((all_astate[j]%env.m).item()), int((all_bstate[j]//env.m).item()), int((all_bstate[j]%env.m).item()))
+        c2s[kmeans.labels_[j]] = (
+        int((all_astate[j] // env.m).item()), int((all_astate[j] % env.m).item()), int((all_bstate[j] // env.m).item()),
+        int((all_bstate[j] % env.m).item()))
 
         s = kmeans.labels_[j]
-        sn = kmeans.labels_[j+1]
+        sn = kmeans.labels_[j + 1]
         a = A[j]
 
         counts[s, a, sn] += 1
 
     np.save('counts.npy', counts)
     import pickle
+
     pickle.dump(c2s, open('dict.pkl', 'wb'))
-
-
-
-
-
-
