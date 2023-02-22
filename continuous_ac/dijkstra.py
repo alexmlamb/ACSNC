@@ -266,7 +266,7 @@ def dijkstra_for_goal(learned_states, current_state_index, goal_index, dp_step, 
     qobj = queue_for_goal(learned_states, current_state_index, goal_index, dp_step)
 
     #print('queue inside of dp-goal-seek')
-    #for ql in qobj:
+    # for ql in qobj:
     #    qlst = []
     #    for qe in ql:
     #        if qe in code2ground:
