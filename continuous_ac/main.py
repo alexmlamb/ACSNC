@@ -90,7 +90,7 @@ if __name__ == '__main__':
     train_args.add_argument("--num-data-samples", default=500000, type=int)
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
-    train_args.add_argument("--do-mixup", action='store_true', defalut=False)
+    train_args.add_argument("--do-mixup", action='store_true', default=False)
 
     train_args.add_argument("--env", default='obstacle', choices=['rat', 'room', 'obstacle'])
 
