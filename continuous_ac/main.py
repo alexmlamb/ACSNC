@@ -142,18 +142,18 @@ if __name__ == '__main__':
     env = RoomEnv()
 
     ac = AC(din=args.latent_dim, nk=args.k_embedding_dim, nact=2).to(device)
-    enc = Encoder(100 * 100, args.latent_dim).to(device)
+    enc = Encoder(1, args.latent_dim).to(device)
     forward = LatentForward(args.latent_dim, 2).to(device)
-    a_probe = Probe(args.latent_dim, 2).to(device)
-    b_probe = Probe(args.latent_dim, 2).to(device)
-    e_probe = Probe(args.latent_dim, 2).to(device)
+    a_probe = Probe(args.latent_dim, 3).to(device)
+    b_probe = Probe(args.latent_dim, 3).to(device)
+    e_probe = Probe(args.latent_dim, 3).to(device)
     ema_enc = EMA(enc, beta=0.99)
     ema_forward = EMA(forward, beta=0.99)
     ema_a_probe = EMA(a_probe.enc, beta=0.99)
 
     field_folder = os.path.join(os.getcwd(), "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
     plan_folder = os.path.join(os.getcwd(), "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
-    dataset_path = os.path.join(os.getcwd(), 'data', 'dataset.p')
+    dataset_path = os.path.join(os.getcwd(), 'robot_data.p')
     model_path = os.path.join(os.getcwd(), 'data', 'model.p')
     os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
     os.makedirs(field_folder, exist_ok=True)
@@ -209,12 +209,16 @@ if __name__ == '__main__':
             xt, xtn, xtk, k, a, astate, estate = sample_batch(X, A, ast, est, 128, max_k=args.max_k)
             astate = torch.round(astate, decimals=3)
 
-            do_bn = (j < 5000)
+            st = enc(xt)
+            stk = enc(xtk)
+            stn = enc(xtn)
 
-            st = enc(xt, do_bn)
-            stk = enc(xtk, do_bn)
-
-            stn = enc(xtn, do_bn)
+            # do_bn = (j < 5000)
+            #
+            # st = enc(xt, do_bn)
+            # stk = enc(xtk, do_bn)
+            #
+            # stn = enc(xtn, do_bn)
 
             ac_loss = ac(st, stk, k, a)
             ap_loss, ap_abserr = a_probe.loss(st, astate)
@@ -234,7 +238,7 @@ if __name__ == '__main__':
             ema_a_probe.update()
             ema_enc.update()
 
-            if j % 100 == 0:
+            if j % 10 == 0:
                 print(j, 'AC_loss', ac_loss.item(), 'A_loss', ap_abserr.item(), 'Asqr_loss', ap_loss.item(), 'Z_loss',
                       z_loss.item())
                 if args.use_wandb:
@@ -249,129 +253,129 @@ if __name__ == '__main__':
             ema_enc.eval()
 
 
-            def vectorplot(a_use, name):
-
-                fig, ax1 = plt.subplots(1, 1, figsize=(16, 9))
-                fontdict = {'fontsize': 28, 'fontweight': 'bold'}
-
-                # make grid
-                action = []
-                xl = []
-                for a in range(2, 99, 5):
-                    for b in range(2, 99, 10):
-                        action.append(a_use)
-                        true_s = [a * 1.0 / 100, b * 1.0 / 100]
-                        x = env.synth_obs(ap=true_s)
-                        xl.append(x)
-
-                action = torch.Tensor(np.array(action)).to(device)
-                xl = torch.Tensor(xl).to(device)
-                print(xl.shape, action.shape)
-                zt = ema_enc(xl)
-                ztn = ema_forward(zt, action)
-                st_inf = ema_a_probe(zt)
-                stn_inf = ema_a_probe(ztn)
-                print('st', st_inf[30], 'stn', stn_inf[30])
-
-                px = st_inf[:, 0]
-                py = stn_inf[:, 1]
-                pu = stn_inf[:, 0] - st_inf[:, 0]
-                pv = stn_inf[:, 1] - st_inf[:, 1]
-
-                # plot the quivers
-                ax1.grid('on')
-                ax1.plot(px.data.cpu(), py.data.cpu(), linewidth=1, color=next(colors))
-                ax1.quiver(px.data.cpu(), py.data.cpu(), 0.5 * pu.data.cpu(), 0.5 * pv.data.cpu())
-                ax1.set_title(name + " " + str(a_use))
-
-                ax1.set_ylabel(rf"y (pixels)", fontdict=fontdict)
-                ax1.set_xlabel(rf"x (pixels)", fontdict=fontdict)
-                ax1.tick_params(axis='both', which='major', labelsize=28)
-                ax1.tick_params(axis='both', which='minor', labelsize=18)
-                ax1.set_title(rf"State Trajectories: {name} {a_use}.", fontdict=fontdict)
-                ax1.legend(loc="center left", fontsize=8)
-
-                fig.savefig(join(field_folder, rf"field_{name}.jpg"), dpi=79, bbox_inches='tight', facecolor='None')
-
-                fig.canvas.draw()
-                fig.canvas.flush_events()
-                plt.clf()
-                time.sleep(.01)
-
-                return xl, action
-
-
-            def squareplot(x_r, a_r):
-
-                true_s = [0.4, 0.4]
-                xl = env.synth_obs(ap=true_s)
-                xl = torch.Tensor(xl).to(device).unsqueeze(0)
-
-                xl = torch.cat([xl, x_r], dim=0)
-
-                zt = ema_enc(xl)
-
-                st_lst = []
-
-                a_lst = [[0.1, 0.0], [0.1, 0.0], [0.0, 0.1], [0.0, 0.1], [-0.1, 0.0], [-0.1, 0.0], [0.0, -0.1],
-                         [0.0, -0.1],
-                         [0.0, 0.0], [0.0, 0.0]]
-                for a in a_lst:
-                    action = torch.Tensor(np.array(a)).to(device).unsqueeze(0)
-                    action = torch.cat([action, a_r], dim=0)
-                    st = ema_a_probe(zt)
-                    st_lst.append(st.data.cpu()[0:1])
-                    zt = ema_forward(zt, action)
-                    print('st', st[0:1])
-                    print('action', a)
-
-                st_lst = torch.cat(st_lst, dim=0)
-
-                true_sq = np.array(
-                    [[0.4, 0.4], [0.5, 0.4], [0.6, 0.4], [0.6, 0.5], [0.6, 0.6], [0.5, 0.6], [0.4, 0.6], [0.4, 0.5],
-                     [0.4, 0.4], [0.4, 0.4]])
-
-                fig, ax = plt.subplots(1, 1, figsize=(16, 9))
-                fontdict = {'fontsize': 28, 'fontweight': 'bold'}
-
-                ax.grid('on')
-
-                ax.plot(st_lst[:, 0].numpy(), st_lst[:, 1].numpy(), linewidth=2, color=next(colors))
-                ax.plot(true_sq[:, 0], true_sq[:, 1], linewidth=2, color="magenta")
-                ax.set_ylim(0, 1)
-                ax.set_xlim(0, 1)
-                ax.set_ylabel(rf"y (pixels)", fontdict=fontdict)
-                ax.set_xlabel(rf"x (pixels)", fontdict=fontdict)
-                ax.tick_params(axis='both', which='major', labelsize=28)
-                ax.tick_params(axis='both', which='minor', labelsize=18)
-
-                ax.set_title("Square Plan", fontdict=fontdict)
-                fig.savefig(join(plan_folder, f"plan.jpg"), dpi=79, bbox_inches='tight', facecolor='None')
-                plt.clf()
-
+            # def vectorplot(a_use, name):
+            #
+            #     fig, ax1 = plt.subplots(1, 1, figsize=(16, 9))
+            #     fontdict = {'fontsize': 28, 'fontweight': 'bold'}
+            #
+            #     # make grid
+            #     action = []
+            #     xl = []
+            #     for a in range(2, 99, 5):
+            #         for b in range(2, 99, 10):
+            #             action.append(a_use)
+            #             true_s = [a * 1.0 / 100, b * 1.0 / 100]
+            #             x = env.synth_obs(ap=true_s)
+            #             xl.append(x)
+            #
+            #     action = torch.Tensor(np.array(action)).to(device)
+            #     xl = torch.Tensor(xl).to(device)
+            #     print(xl.shape, action.shape)
+            #     zt = ema_enc(xl)
+            #     ztn = ema_forward(zt, action)
+            #     st_inf = ema_a_probe(zt)
+            #     stn_inf = ema_a_probe(ztn)
+            #     print('st', st_inf[30], 'stn', stn_inf[30])
+            #
+            #     px = st_inf[:, 0]
+            #     py = stn_inf[:, 1]
+            #     pu = stn_inf[:, 0] - st_inf[:, 0]
+            #     pv = stn_inf[:, 1] - st_inf[:, 1]
+            #
+            #     # plot the quivers
+            #     ax1.grid('on')
+            #     ax1.plot(px.data.cpu(), py.data.cpu(), linewidth=1, color=next(colors))
+            #     ax1.quiver(px.data.cpu(), py.data.cpu(), 0.5 * pu.data.cpu(), 0.5 * pv.data.cpu())
+            #     ax1.set_title(name + " " + str(a_use))
+            #
+            #     ax1.set_ylabel(rf"y (pixels)", fontdict=fontdict)
+            #     ax1.set_xlabel(rf"x (pixels)", fontdict=fontdict)
+            #     ax1.tick_params(axis='both', which='major', labelsize=28)
+            #     ax1.tick_params(axis='both', which='minor', labelsize=18)
+            #     ax1.set_title(rf"State Trajectories: {name} {a_use}.", fontdict=fontdict)
+            #     ax1.legend(loc="center left", fontsize=8)
+            #
+            #     fig.savefig(join(field_folder, rf"field_{name}.jpg"), dpi=79, bbox_inches='tight', facecolor='None')
+            #
+            #     fig.canvas.draw()
+            #     fig.canvas.flush_events()
+            #     plt.clf()
+            #     time.sleep(.01)
+            #
+            #     return xl, action
+            #
+            #
+            # def squareplot(x_r, a_r):
+            #
+            #     true_s = [0.4, 0.4]
+            #     xl = env.synth_obs(ap=true_s)
+            #     xl = torch.Tensor(xl).to(device).unsqueeze(0)
+            #
+            #     xl = torch.cat([xl, x_r], dim=0)
+            #
+            #     zt = ema_enc(xl)
+            #
+            #     st_lst = []
+            #
+            #     a_lst = [[0.1, 0.0], [0.1, 0.0], [0.0, 0.1], [0.0, 0.1], [-0.1, 0.0], [-0.1, 0.0], [0.0, -0.1],
+            #              [0.0, -0.1],
+            #              [0.0, 0.0], [0.0, 0.0]]
+            #     for a in a_lst:
+            #         action = torch.Tensor(np.array(a)).to(device).unsqueeze(0)
+            #         action = torch.cat([action, a_r], dim=0)
+            #         st = ema_a_probe(zt)
+            #         st_lst.append(st.data.cpu()[0:1])
+            #         zt = ema_forward(zt, action)
+            #         print('st', st[0:1])
+            #         print('action', a)
+            #
+            #     st_lst = torch.cat(st_lst, dim=0)
+            #
+            #     true_sq = np.array(
+            #         [[0.4, 0.4], [0.5, 0.4], [0.6, 0.4], [0.6, 0.5], [0.6, 0.6], [0.5, 0.6], [0.4, 0.6], [0.4, 0.5],
+            #          [0.4, 0.4], [0.4, 0.4]])
+            #
+            #     fig, ax = plt.subplots(1, 1, figsize=(16, 9))
+            #     fontdict = {'fontsize': 28, 'fontweight': 'bold'}
+            #
+            #     ax.grid('on')
+            #
+            #     ax.plot(st_lst[:, 0].numpy(), st_lst[:, 1].numpy(), linewidth=2, color=next(colors))
+            #     ax.plot(true_sq[:, 0], true_sq[:, 1], linewidth=2, color="magenta")
+            #     ax.set_ylim(0, 1)
+            #     ax.set_xlim(0, 1)
+            #     ax.set_ylabel(rf"y (pixels)", fontdict=fontdict)
+            #     ax.set_xlabel(rf"x (pixels)", fontdict=fontdict)
+            #     ax.tick_params(axis='both', which='major', labelsize=28)
+            #     ax.tick_params(axis='both', which='minor', labelsize=18)
+            #
+            #     ax.set_title("Square Plan", fontdict=fontdict)
+            #     fig.savefig(join(plan_folder, f"plan.jpg"), dpi=79, bbox_inches='tight', facecolor='None')
+            #     plt.clf()
+            #
 
             if True and j % 1000 == 0:
-                vectorplot([0.0, 0.1], 'up')
-                vectorplot([0.0, -0.1], 'down')
-                vectorplot([-0.1, 0.0], 'left')
-                vectorplot([0.1, 0.0], 'right')
-                vectorplot([0.1, 0.1], 'up-right')
-                x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
+                # vectorplot([0.0, 0.1], 'up')
+                # vectorplot([0.0, -0.1], 'down')
+                # vectorplot([-0.1, 0.0], 'left')
+                # vectorplot([0.1, 0.0], 'right')
+                # vectorplot([0.1, 0.1], 'up-right')
+                # x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
+                #
+                # squareplot(x_r, a_r)
 
-                squareplot(x_r, a_r)
-
-                if args.use_wandb:
-                    wandb.log({
-                        'fields/down': wandb.Image(join(field_folder, "field_down.jpg")),
-                        'fields/up': wandb.Image(join(field_folder, "field_up.jpg")),
-                        'fields/left': wandb.Image(join(field_folder, "field_left.jpg")),
-                        'fields/right': wandb.Image(join(field_folder, "field_right.jpg")),
-                        'fields/up-right': wandb.Image(join(field_folder,
-                                                            "field_up-right.jpg")),
-                        'fields/plan': wandb.Image(join(plan_folder,
-                                                        "plan.jpg")),
-                        'update': j
-                    })
+                # if args.use_wandb:
+                #     wandb.log({
+                #         'fields/down': wandb.Image(join(field_folder, "field_down.jpg")),
+                #         'fields/up': wandb.Image(join(field_folder, "field_up.jpg")),
+                #         'fields/left': wandb.Image(join(field_folder, "field_left.jpg")),
+                #         'fields/right': wandb.Image(join(field_folder, "field_right.jpg")),
+                #         'fields/up-right': wandb.Image(join(field_folder,
+                #                                             "field_up-right.jpg")),
+                #         'fields/plan': wandb.Image(join(plan_folder,
+                #                                         "plan.jpg")),
+                #         'update': j
+                #     })
 
                 # save
                 torch.save({'ac': ac.state_dict(),
@@ -390,13 +394,13 @@ if __name__ == '__main__':
         a_probe = a_probe.eval().to(device)
 
         # load-dataset
-        dataset = pickle.load(open('data/dataset.p', 'rb'))
+        dataset = pickle.load(open('robot_data.p', 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
         # generate latent-states and ground them
         latent_states = []
         predicted_grounded_states = []
-        for i in range(0, 100000, 256):
+        for i in range(0, 10000, 256):
             with torch.no_grad():
                 _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                 latent_states += _latent_state.cpu().numpy().tolist()
@@ -410,6 +414,7 @@ if __name__ == '__main__':
         kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
         predicted_labels = kmeans.predict(latent_states)
         centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
+
 
         # visualize and save
         kmean_plot_fig = plt.figure()
@@ -430,14 +435,28 @@ if __name__ == '__main__':
         plt.savefig(join(field_folder, 'latent_cluster.png'))
         plt.clf()
 
-        plt.scatter(x=grounded_states[:, 0],
-                    y=predicted_grounded_states[:, 0],
-                    marker='.')
-        plt.savefig(join(field_folder, 'ground_vs_predicted_state.png'))
+        for axis in range(3):
+            plt.scatter(x=grounded_states[:, axis],
+                        y=predicted_grounded_states[:, axis],
+                        marker='.')
+            plt.savefig(join(field_folder, f'ground_vs_predicted_state_axis-{axis}.png'))
+            plt.clf()
         if args.use_wandb:
+            import plotly.express as px
+            fig_1 = px.scatter_3d(x=grounded_states[:, 0],
+                                y=grounded_states[:, 1],
+                                z=grounded_states[:, 2],
+                                color=predicted_labels)
+            fig_2 = px.scatter_3d(x=centroids[:, 0],
+                                y=centroids[:, 1],
+                                z=centroids[:, 2])
             wandb.log({'latent-cluster': wandb.Image(join(field_folder, "latent_cluster.png")),
-                       'grounded-vs-predicted-state': wandb.Image(join(field_folder, "ground_vs_predicted_state.png"))})
+                       'latent-cluster-3d': fig_1,
+                       'latent-cluster-3d-centroids': fig_2,
+                       **{f'grounded-vs-predicted-state_axis-{axis}': wandb.Image(join(field_folder, f"ground_vs_predicted_state_axis-{axis}.png")) for axis in range(3)}})
+
             wandb.save(glob_str='kmeans.p', policy='now')
+
     elif args.opr == 'generate-mdp':
         # load model
         model = torch.load(model_path, map_location=torch.device('cpu'))
