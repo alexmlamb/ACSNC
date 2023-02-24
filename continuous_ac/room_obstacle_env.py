@@ -82,7 +82,7 @@ def obstacle_detection(obs_list, otype_list, before_pos, agent_pos):
             raise Exception('done')
 
         if not 'EMPTY' in str(intersect) and not 'LINESTRING' in str(intersect):
-            intersections.append(np.array([intersect.x, intersect.y]).astype(agent_pos.dtype))
+            intersections.append(np.array([intersect.x, intersect.y]).astype('float32'))
             intersection_type.append(otype_list[i])
 
     if len(intersections) == 0:

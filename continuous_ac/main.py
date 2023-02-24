@@ -1030,7 +1030,7 @@ if __name__ == '__main__':
         empirical_mdp = pickle.load(open(mdp_path, 'rb'))
 
         # load models
-        model_path = os.path.join(os.getcwd(), 'model.p')
+        model_path = os.path.join(os.getcwd(), 'data', 'model.p')
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
@@ -1045,7 +1045,7 @@ if __name__ == '__main__':
         grounded_cluster_centers = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
 
         # load-dataset
-        dataset_path = os.path.join(os.getcwd(), 'dataset.p')
+        dataset_path = os.path.join(os.getcwd(), 'data', 'dataset.p')
         dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
         X = X[np.abs(A).sum(1) < 0.1]
@@ -1092,6 +1092,7 @@ if __name__ == '__main__':
         current_state = init_mdp_state
         distance_to_goal, g, step_action_idx = DP_goals(ls, init_state=current_state, goal_index=target_mdp_state,
                                                                 dp_step=dp_step_use, code2ground={})
+        next_mdp_state = empirical_mdp.step(current_state, step_action_idx)
 
         # initialize low level planning parameters
         n_batch, T, N = 10, 10, 3
