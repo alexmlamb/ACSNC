@@ -17,24 +17,23 @@ class EmpiricalMDP:
         self.discrete_transition = self.__discrete_transition()
 
     def __discrete_transition(self):
-        
+
         # discretize actions
-        actions  = []
-        for x in np.arange(-0.1, 0.1+0.01, 0.01):
-            for y in np.arange(-0.1, 0.1+0.01, 0.01):
-                actions.append((round(x,2), round(y,2)))
+        actions = []
+        for x in np.arange(-0.1, 0.1 + 0.01, 0.01):
+            for y in np.arange(-0.1, 0.1 + 0.01, 0.01):
+                actions.append((round(x, 2), round(y, 2)))
         self.discrete_action_space = np.unique(actions, axis=0)
 
         # generate discrete transition matrix containing visit count
-        action_value_idx_map = {tuple(val):idx for idx, val in enumerate(self.discrete_action_space)}
+        action_value_idx_map = {tuple(val): idx for idx, val in enumerate(self.discrete_action_space)}
         transition = np.zeros((len(self.unique_states), len(self.discrete_action_space), len(self.unique_states)))
         for state in range(len(self.transition)):
             for next_state, action in enumerate(self.transition[state]):
                 if not np.isnan(action).all():
-                    transition[state][action_value_idx_map[tuple(np.round(action,2))]][next_state] += 1
-        
-        return transition
+                    transition[state][action_value_idx_map[tuple(np.round(action, 2))]][next_state] += 1
 
+        return transition
 
     def __estimate_transition(self):
         transition = np.empty((len(self.unique_states), len(self.unique_states), len(self.action[0])))
@@ -77,3 +76,23 @@ class EmpiricalMDP:
         if save_path is not None:
             plt.savefig(save_path)
         return graph
+
+    def step(self, state, action_idx):
+        """ samples a next state from current state and action"""
+        next_state_visit_count = self.discrete_transition[state][action_idx]
+        next_state_prob = self.__normalize(next_state_visit_count, next_state_visit_count.min(),
+                                           next_state_visit_count.max())
+        next_state_sample = np.random.choice(np.arange(0, len(next_state_visit_count)), 1, replace=False,
+                                             p=next_state_prob)
+
+        return next_state_sample[0]
+
+    @staticmethod
+    def __normalize(arr, t_min, t_max):
+        norm_arr = []
+        diff = t_max - t_min
+        diff_arr = max(arr) - min(arr)
+        for i in arr:
+            temp = (((i - min(arr)) * diff) / diff_arr) + t_min
+            norm_arr.append(temp)
+        return norm_arr
