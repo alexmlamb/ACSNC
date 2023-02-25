@@ -110,14 +110,7 @@ def obstacle_detection(obs_list, otype_list, before_pos, agent_pos):
         else:
             raise Exception() 
 
-        return update_pos
-
-        
-
-
-
-
-
+        return update_pos[:]
 
 class RoomObstacleEnv:
 
@@ -156,10 +149,8 @@ class RoomObstacleEnv:
         obs_lst = []
         #obs_lst.append(LineString([(0.63,0.25), (0.63, 0.75)]))
 
-        # SC: extend the wall by delta to avoid numerical errors
-        delta = 0.005
-        obs_lst.append(LineString([(0.501,0.001 - delta), (0.501, 0.401 + delta)]))
-        obs_lst.append(LineString([(0.501,0.601 - delta), (0.501, 1.01 + delta)]))
+        obs_lst.append(LineString([(0.501,0.001), (0.501, 0.401)]))
+        obs_lst.append(LineString([(0.501,0.601), (0.501, 1.01)]))
         obs_lst.append(LineString([(0.201,0.401), (0.801, 0.401)]))
         obs_lst.append(LineString([(0.201,0.601), (0.801, 0.601)]))
 
@@ -176,8 +167,8 @@ class RoomObstacleEnv:
 
         #    self.agent_pos[0] = intersect.x + delta
         #    self.agent_pos[1] = intersect.y + delta
-
-        self.agent_pos = obstacle_detection(obs_lst, otype_lst, before_pos, self.agent_pos)
+        agent_pos = copy.deepcopy(self.agent_pos)
+        self.agent_pos = obstacle_detection(obs_lst, otype_lst, before_pos, agent_pos)
 
         # for j in range(len(obs_lst)):
         #     self.agent_pos = obs_check(obs_lst[j], otype_lst[j], before_pos, self.agent_pos)
@@ -203,7 +194,8 @@ class RoomObstacleEnv:
     def get_obs(self):
         x = np.zeros(shape=(100, 100))
 
-        x[min(99, int(round(self.agent_pos[0] * 100))), min(99, int(round(self.agent_pos[1] * 100)))] += 1
+        agent_pos = copy.deepcopy(self.agent_pos)
+        x[min(99, int(round(agent_pos[0] * 100))), min(99, int(round(agent_pos[1] * 100)))] += 1
 
         # x = self.blur_obs(x)
 
@@ -211,7 +203,7 @@ class RoomObstacleEnv:
 
         exo = [0.0, 0.0]
 
-        return x.flatten(), self.agent_pos, exo
+        return x.flatten(), agent_pos, exo
 
 
 if __name__ == "__main__":
