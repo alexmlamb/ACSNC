@@ -208,9 +208,13 @@ class Probe(nn.Module):
     def __init__(self, din, dout):
         super().__init__()
 
-        # self.enc = nn.Sequential(nn.Linear(din, 512), nn.BatchNorm1d(512), nn.LeakyReLU(), nn.Linear(512,512), nn.BatchNorm1d(512), nn.LeakyReLU(), nn.Linear(512, dout))
+        self.enc = nn.Sequential(nn.Linear(din, 512),
+                                 nn.LeakyReLU(),
+                                 nn.Linear(512, 512),
+                                 nn.LeakyReLU(),
+                                 nn.Linear(512, dout))
 
-        self.enc = nn.Sequential(ResMLP(256), nn.Linear(256, dout))
+        # self.enc = nn.Sequential(ResMLP(256), nn.Linear(256, dout))
         # self.enc = nn.Linear(din, dout)
 
     def forward(self, s):
