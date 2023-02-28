@@ -62,6 +62,7 @@ def abstract_path_sampler(empirical_mdp, abstract_horizon):
 
 
 def obs_sampler(dataset_obs, dataset_agent_states, state_labels, abstract_state):
+    # np.random.seed(0)
     _filtered_obs = dataset_obs[state_labels == abstract_state]
     _filtered_agent_states = dataset_agent_states[state_labels == abstract_state]
     index = np.random.choice(range(len(_filtered_obs)))
@@ -212,20 +213,6 @@ if __name__ == '__main__':
         A = np.asarray(A).astype('float32')
         ast = np.array(ast).astype('float32')
         est = np.array(est).astype('float32')
-
-        # # check validity of samples
-        # plt.figure()
-        # # plot the obstacle
-        # plt.plot(np.array([0.501, 0.501]), np.array([0.001, 0.401]), color = 'k', linewidth = 4)
-        # plt.plot(np.array([0.501, 0.501]), np.array([0.601, 1.01]), color = 'k', linewidth = 4)
-        # plt.plot(np.array([0.201, 0.801]), np.array([0.401, 0.401]), color = 'k', linewidth = 4)
-        # plt.plot(np.array([0.201, 0.801]), np.array([0.601, 0.601]), color = 'k', linewidth = 4)
-        # plt.xlim([0.0, 1.0])
-        # plt.ylim([0.0, 1.0])
-        # ast_plot = ast[1023:1058,:]
-        # plt.plot(ast_plot[:, 0], ast_plot[:, 1], color = 'b')
-        # plt.scatter(ast_plot[:, 0], ast_plot[:, 1])
-        # plt.savefig('sampled_transition.png')
 
         pickle.dump({'X': X, 'A': A, 'ast': ast, 'est': est}, open(dataset_path, 'wb'))
 
@@ -473,7 +460,7 @@ if __name__ == '__main__':
         # generate latent-states and ground them
         latent_states = []
         predicted_grounded_states = []
-        for i in range(0, 100000, 256):
+        for i in range(0, X.shape[0], 256):
             with torch.no_grad():
                 _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                 latent_states += _latent_state.cpu().numpy().tolist()
@@ -922,7 +909,7 @@ if __name__ == '__main__':
         # specify start state and goal state
         from_to = args.from_to
         if not isinstance(from_to, list):
-            from_to = [42, 44]
+            from_to = [19, 27]
 
         # initial mdp state
         init_mdp_state = from_to[0]
@@ -1081,7 +1068,7 @@ if __name__ == '__main__':
         # specify start state and goal state
         from_to = args.from_to
         if not isinstance(from_to, list):
-            from_to = [19, 27]
+            from_to = [13, 33]
 
         # initial mdp state
         init_mdp_state = from_to[0]
@@ -1102,7 +1089,7 @@ if __name__ == '__main__':
         target_mdp_state = kmeans.predict(target_lat_state.detach().cpu())[0]
 
         # initialize low level planning parameters
-        n_batch, T, N = 10, 10, 3
+        n_batch, T, N = 10, 15, 3
         u_min, u_max = -0.2, 0.2
 
         # latent space dynamics
@@ -1139,9 +1126,9 @@ if __name__ == '__main__':
 
             # call high level planner
             current_mdp_state = kmeans.predict(z_t.detach().cpu())[0]
+            executed_mdp_states.append(current_mdp_state)
 
             if current_mdp_state != target_mdp_state:
-                executed_mdp_states.append(current_mdp_state)
                 next_mdp_state = dijkstra_planner.step(current_mdp_state, target_mdp_state)
                 planned_mdp_states.append(next_mdp_state)
 
