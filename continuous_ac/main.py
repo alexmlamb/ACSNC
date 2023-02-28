@@ -260,6 +260,15 @@ if __name__ == '__main__':
                          'a-loss': ap_abserr.item(),
                          'asqr-loss': ap_loss.item()})
 
+                torch.save({'ac': ac.state_dict(),
+                            'enc': enc.state_dict(),
+                            'forward': forward.state_dict(),
+                            'a_probe': a_probe.state_dict(),
+                            'b_probe': b_probe.state_dict(),
+                            'e_probe': e_probe.state_dict()}, model_path)
+                if args.use_wandb:
+                    wandb.save(model_path, policy="now")
+
             ema_a_probe.eval()
             ema_forward.eval()
             ema_enc.eval()
@@ -365,7 +374,7 @@ if __name__ == '__main__':
             #     plt.clf()
             #
 
-            if True and j % 1000 == 0:
+            # if True and j % 1000 == 0:
                 # vectorplot([0.0, 0.1], 'up')
                 # vectorplot([0.0, -0.1], 'down')
                 # vectorplot([-0.1, 0.0], 'left')
@@ -389,14 +398,7 @@ if __name__ == '__main__':
                 #     })
 
                 # save
-                torch.save({'ac': ac.state_dict(),
-                            'enc': enc.state_dict(),
-                            'forward': forward.state_dict(),
-                            'a_probe': a_probe.state_dict(),
-                            'b_probe': b_probe.state_dict(),
-                            'e_probe': e_probe.state_dict()}, model_path)
-                if args.use_wandb:
-                    wandb.save(model_path, policy="now")
+
     elif args.opr == 'vector-plots':
 
         # load model

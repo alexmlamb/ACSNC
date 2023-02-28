@@ -207,18 +207,20 @@ class Encoder(nn.Module):
 class Probe(nn.Module):
     def __init__(self, din, dout):
         super().__init__()
-
-        self.enc = nn.Sequential(nn.Linear(din, 512),
-                                 nn.LeakyReLU(),
-                                 nn.Linear(512, 512),
-                                 nn.LeakyReLU(),
-                                 nn.Linear(512, dout))
+        self.din = din
+        self.dout = dout
+        # self.enc = nn.Sequential(nn.Linear(din, 512),
+        #                          nn.LeakyReLU(),
+        #                          nn.Linear(512, 512),
+        #                          nn.LeakyReLU(),
+        #                          nn.Linear(512, dout))
 
         # self.enc = nn.Sequential(ResMLP(256), nn.Linear(256, dout))
         # self.enc = nn.Linear(din, dout)
 
     def forward(self, s):
-        return self.enc(s)
+        return s
+        # return self.enc(s)
 
     def loss(self, s, gt):
         # print('input', s[:10])
@@ -228,9 +230,10 @@ class Probe(nn.Module):
         # print('in probe')
         # print(s[0])
 
-        sd = s.detach()
+        # sd = s.detach()
+        sd = s
 
-        sd = self.enc(sd)
+        sd = self.forward(sd)
 
         loss = ((sd - gt) ** 2).sum(dim=-1).mean()
 
