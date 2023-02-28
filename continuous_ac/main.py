@@ -116,6 +116,50 @@ class LatentWrapper(nn.Module):
     def forward(self, z, a):
         return self.latent(z, a, detach = False)
 
+class Cluster_Transform:
+    def __init__(self, enc, fwd_dyn, device = 'cuda') -> None:
+        self.enc = enc
+        self.fwd_dyn = fwd_dyn 
+        self.device = device
+
+    def cluster_label_transform(self, X):
+        # generate label [z, f(z, a_1), f(z, a_2), f(z, a_3), f(z, a_4)] from observations X for clustering
+        # with z = enc(X) being the latent state and f(.,.) being the latent forward dynamics
+        img = torch.FloatTensor(X).to(self.device)
+        z = self.enc(img)
+        
+        actions = torch.FloatTensor([[0.1, 0.0], [-0.1, 0.0], [0.0, 0.1], [0.0, -0.1]]).to(self.device)
+        output = z
+        for i in range(4):
+            y = self.fwd_dyn(z, actions[i].unsqueeze(0).repeat(z.size(0), 1))
+            output = torch.cat((output, y.detach()), axis = 1)
+
+        return output
+
+    def cluster_label_transform_latent(self, z):
+        # augment the latent state z for clustering
+        actions = torch.FloatTensor([[0.1, 0.0], [-0.1, 0.0], [0.0, 0.1], [0.0, -0.1]]).to(self.device)
+        output = z
+        for i in range(4):
+            y = self.fwd_dyn(z, actions[i].unsqueeze(0).repeat(z.size(0), 1))
+            output = torch.cat((output, y.detach()), axis = 1)
+
+        return output
+
+# def cluster_label_transform(X, enc, fwd_dyn, device = 'cuda'):
+#     # generate label [z, f(z, a_1), f(z, a_2), f(z, a_3), f(z, a_4)] from observations X for clustering
+#     # with z = enc(X) being the latent state and f(.,.) being the latent forward dynamics
+#     img = torch.FloatTensor(X).to(device)
+#     z = enc(img)
+    
+#     actions = torch.FloatTensor([[0.1, 0.0], [-0.1, 0.0], [0.0, 0.1], [0.0, -0.1]]).to(device)
+#     output = z
+#     for i in range(4):
+#         y = fwd_dyn(z, actions[i].unsqueeze(0).repeat(z.size(0), 1))
+#         output = torch.cat((output, y.detach()), axis = 1)
+
+#     return output
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
@@ -451,6 +495,11 @@ if __name__ == '__main__':
         enc = enc.eval().to(device)
         a_probe = a_probe.eval().to(device)
 
+        forward.load_state_dict(model['forward'])
+        forward.eval().to(device)
+
+        cluster_trans = Cluster_Transform(enc, forward, device = device)
+
         # load-dataset
         dataset = pickle.load(open('data/dataset.p', 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
@@ -458,24 +507,26 @@ if __name__ == '__main__':
         print('data loaded')
 
         # generate latent-states and ground them
-        latent_states = []
+        aug_latent_states = []
         predicted_grounded_states = []
         for i in range(0, X.shape[0], 256):
             with torch.no_grad():
-                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
-                latent_states += _latent_state.cpu().numpy().tolist()
-                predicted_grounded_states += a_probe(_latent_state).cpu().numpy().tolist()
+                _aug_latent_state = cluster_trans.cluster_label_transform(X[i:i+256])
+                # _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
+                aug_latent_states += _aug_latent_state.cpu().numpy().tolist()
+                predicted_grounded_states += a_probe(_aug_latent_state[:,:256]).cpu().numpy().tolist()
 
         predicted_grounded_states = np.array(predicted_grounded_states)
-        grounded_states = np.array(ast[:len(latent_states)])
-        latent_states = np.array(latent_states)
+        grounded_states = np.array(ast[:len(aug_latent_states)])
+        aug_latent_states = np.array(aug_latent_states)
+        latent_state = aug_latent_states[:,:256]
 
         print('about to run kmeans')
 
         # clustering
-        kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
-        predicted_labels = kmeans.predict(latent_states)
-        centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
+        kmeans = KMeans(n_clusters=50, random_state=0).fit(aug_latent_states)
+        predicted_labels = kmeans.predict(aug_latent_states)
+        centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_[:,:256]).to(device)).cpu().detach().numpy()
 
         # visualize and save
         kmean_plot_fig = plt.figure()
@@ -509,6 +560,10 @@ if __name__ == '__main__':
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
+        
+        forward.load_state_dict(model['forward'])
+        forward.eval().to(device)
+        cluster_trans = Cluster_Transform(enc, forward, device = device)
 
         # load clustering
         kmeans_info = pickle.load(open('kmeans_info.p', 'rb'))
@@ -524,10 +579,9 @@ if __name__ == '__main__':
         latent_states, states_label = [], []
         for i in range(0, len(X), 256):
             with torch.no_grad():
-                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
-                latent_states += _latent_state.cpu().numpy().tolist()
-                states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
-
+                _aug_latent_state = cluster_trans.cluster_label_transform(X[i:i+256])
+                latent_states += _aug_latent_state[:,:256].cpu().numpy().tolist()
+                states_label += kmeans.predict(_aug_latent_state.cpu().numpy().tolist()).tolist()
 
         next_state = np.array(states_label[1:])
         next_state = next_state[np.abs(A[:-1]).sum(1) < 0.1]
@@ -1033,10 +1087,12 @@ if __name__ == '__main__':
         model_path = os.path.join(os.getcwd(), 'data', 'model.p')
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
-        enc.eval()
+        enc.eval().to(device)
 
         forward.load_state_dict(model['forward'])
-        forward.eval()
+        forward.eval().to(device)
+
+        cluster_trans = Cluster_Transform(enc, forward, device = device)
 
         a_probe.load_state_dict(model['a_probe'])
 
@@ -1068,7 +1124,7 @@ if __name__ == '__main__':
         # specify start state and goal state
         from_to = args.from_to
         if not isinstance(from_to, list):
-            from_to = [13, 33]
+            from_to = [7,6]
 
         # initial mdp state
         init_mdp_state = from_to[0]
@@ -1086,7 +1142,9 @@ if __name__ == '__main__':
         target_lat_state = init_lat_state + scaling_factor*(target_lat_state - init_lat_state)
 
         target_gt_agent_state = a_probe(target_lat_state)[0]
-        target_mdp_state = kmeans.predict(target_lat_state.detach().cpu())[0]
+
+        aug_target_lat_state = cluster_trans.cluster_label_transform_latent(target_lat_state)
+        target_mdp_state = kmeans.predict(aug_target_lat_state.detach().cpu())[0]
 
         # initialize low level planning parameters
         n_batch, T, N = 10, 15, 3
@@ -1125,14 +1183,15 @@ if __name__ == '__main__':
             start_time = time.time()
 
             # call high level planner
-            current_mdp_state = kmeans.predict(z_t.detach().cpu())[0]
+            aug_z_t = cluster_trans.cluster_label_transform_latent(z_t)
+            current_mdp_state = kmeans.predict(aug_z_t.detach().cpu())[0]
             executed_mdp_states.append(current_mdp_state)
 
             if current_mdp_state != target_mdp_state:
                 next_mdp_state = dijkstra_planner.step(current_mdp_state, target_mdp_state)
                 planned_mdp_states.append(next_mdp_state)
 
-                next_lat_state = kmeans.cluster_centers_[next_mdp_state]
+                next_lat_state = kmeans.cluster_centers_[next_mdp_state][:256]
                 next_lat_state = torch.FloatTensor(next_lat_state).unsqueeze(0).to(device)
             else:
                 next_lat_state = target_lat_state
