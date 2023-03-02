@@ -167,7 +167,7 @@ if __name__ == '__main__':
     ema_a_probe = EMA(a_probe.enc, beta=0.99)
 
     field_folder = os.path.join(os.getcwd(), "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
-    plan_folder = os.path.join(os.getcwd(), "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
+    plan_folder = os.path.join(os.getcwd(), "plans")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
     dataset_path = os.path.join(os.getcwd(), 'robot_data.p')
     model_path = os.path.join(os.getcwd(), 'data', 'model.p')
     os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
@@ -484,8 +484,8 @@ if __name__ == '__main__':
                 'fields/right': wandb.Image(join(field_folder, "field_right.jpg")),
                 'fields/up-right': wandb.Image(join(field_folder,
                                                     "field_up-right.jpg")),
-                'fields/plan': wandb.Image(join(plan_folder,
-                                                "plan.jpg")),
+                'fields/down-left': wandb.Image(join(field_folder,
+                                                    "field_down-left.jpg")),
             })
     elif args.opr == 'cluster-latent':
 
