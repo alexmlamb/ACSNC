@@ -105,7 +105,8 @@ def sample_batch(X, A, ast, est, bs, max_k):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-
+    parser.add_argument('--no-cuda', action='store_true',
+                          help='no cuda usage')
     # wandb setup
     wandb_args = parser.add_argument_group('wandb setup')
     wandb_args.add_argument('--wandb-project-name', default='acsnc',
@@ -125,7 +126,9 @@ if __name__ == '__main__':
 
     # process arguments
     args = parser.parse_args()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    args.device = ('cuda' if (not args.no_cuda) and
+                             torch.cuda.is_available() else 'cpu')
 
     # seed
     torch.manual_seed(args.seed)
