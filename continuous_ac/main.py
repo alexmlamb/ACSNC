@@ -516,10 +516,28 @@ if __name__ == '__main__':
         predicted_labels = kmeans.predict(latent_states)
         centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
 
-        # visualize and save
+        # visualize using grounded info:
+        plt.clf()
         kmean_plot_fig = plt.figure()
         plt.scatter(x=grounded_states[:, 0],
                     y=grounded_states[:, 1],
+                    c=predicted_labels,
+                    marker='.')
+        plt.scatter(x=centroids[:, 0],
+                    y=centroids[:, 1],
+                    marker="*")
+
+        for centroid_i, centroid in enumerate(centroids):
+            plt.text(centroid[0], centroid[1], str(centroid_i), horizontalalignment='center', fontsize=8, color='black')
+        plt.savefig(join(field_folder, 'latent_cluster-grounded-states.png'))
+        if args.use_wandb:
+            wandb.log({'latent-cluster-grounded-state': wandb.Image(join(field_folder, 'latent_cluster-grounded-states.png'))})
+
+        # visualize and save
+        plt.clf()
+        kmean_plot_fig = plt.figure()
+        plt.scatter(x=latent_states[:, 0],
+                    y=latent_states[:, 1],
                     c=predicted_labels,
                     marker='.')
         plt.scatter(x=centroids[:, 0],
