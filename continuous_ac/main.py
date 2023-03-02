@@ -106,7 +106,7 @@ def sample_batch(X, A, ast, est, bs, max_k):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-cuda', action='store_true',
-                          help='no cuda usage')
+                        help='no cuda usage')
     # wandb setup
     wandb_args = parser.add_argument_group('wandb setup')
     wandb_args.add_argument('--wandb-project-name', default='acsnc',
@@ -128,7 +128,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     device = ('cuda' if (not args.no_cuda) and
-                             torch.cuda.is_available() else 'cpu')
+                        torch.cuda.is_available() else 'cpu')
 
     # seed
     torch.manual_seed(args.seed)
@@ -173,7 +173,7 @@ if __name__ == '__main__':
     os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
     os.makedirs(field_folder, exist_ok=True)
     os.makedirs(plan_folder, exist_ok=True)
-    os.makedirs( os.path.join(os.getcwd(), 'data'), exist_ok=True)
+    os.makedirs(os.path.join(os.getcwd(), 'data'), exist_ok=True)
     colors = iter(plt.cm.inferno_r(np.linspace(.25, 1, 200000)))
 
     if args.opr == 'generate-data':
@@ -209,8 +209,6 @@ if __name__ == '__main__':
                                + list(a_probe.parameters())
                                + list(b_probe.parameters())
                                + list(forward.parameters()), lr=0.0001)
-
-
 
         print('Run K-mneas')
         kmeans = KMeans(n_clusters=20, verbose=1).fit(A)
@@ -380,29 +378,29 @@ if __name__ == '__main__':
             #
 
             # if True and j % 1000 == 0:
-                # vectorplot([0.0, 0.1], 'up')
-                # vectorplot([0.0, -0.1], 'down')
-                # vectorplot([-0.1, 0.0], 'left')
-                # vectorplot([0.1, 0.0], 'right')
-                # vectorplot([0.1, 0.1], 'up-right')
-                # x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
-                #
-                # squareplot(x_r, a_r)
+            # vectorplot([0.0, 0.1], 'up')
+            # vectorplot([0.0, -0.1], 'down')
+            # vectorplot([-0.1, 0.0], 'left')
+            # vectorplot([0.1, 0.0], 'right')
+            # vectorplot([0.1, 0.1], 'up-right')
+            # x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
+            #
+            # squareplot(x_r, a_r)
 
-                # if args.use_wandb:
-                #     wandb.log({
-                #         'fields/down': wandb.Image(join(field_folder, "field_down.jpg")),
-                #         'fields/up': wandb.Image(join(field_folder, "field_up.jpg")),
-                #         'fields/left': wandb.Image(join(field_folder, "field_left.jpg")),
-                #         'fields/right': wandb.Image(join(field_folder, "field_right.jpg")),
-                #         'fields/up-right': wandb.Image(join(field_folder,
-                #                                             "field_up-right.jpg")),
-                #         'fields/plan': wandb.Image(join(plan_folder,
-                #                                         "plan.jpg")),
-                #         'update': j
-                #     })
+            # if args.use_wandb:
+            #     wandb.log({
+            #         'fields/down': wandb.Image(join(field_folder, "field_down.jpg")),
+            #         'fields/up': wandb.Image(join(field_folder, "field_up.jpg")),
+            #         'fields/left': wandb.Image(join(field_folder, "field_left.jpg")),
+            #         'fields/right': wandb.Image(join(field_folder, "field_right.jpg")),
+            #         'fields/up-right': wandb.Image(join(field_folder,
+            #                                             "field_up-right.jpg")),
+            #         'fields/plan': wandb.Image(join(plan_folder,
+            #                                         "plan.jpg")),
+            #         'update': j
+            #     })
 
-                # save
+            # save
 
     elif args.opr == 'vector-plots':
 
@@ -469,12 +467,12 @@ if __name__ == '__main__':
             return xl, action
 
 
-        vectorplot([0.0, 0.1, 0 ], 'up')
-        vectorplot([0.0, -0.1,0 ], 'down')
-        vectorplot([-0.1, 0.0, 0], 'left')
-        vectorplot([0.1, 0.0, 0], 'right')
-        vectorplot([0.1, 0.1,0 ], 'up-right')
-        x_r, a_r = vectorplot([-0.1, -0.1, 0], 'down-left')
+        vectorplot([0.0, 0.08, 0], 'up')
+        vectorplot([0.0, -0.08, 0], 'down')
+        vectorplot([-0.08, 0.0, 0], 'left')
+        vectorplot([0.08, 0.0, 0], 'right')
+        vectorplot([0.08, 0.08, 0], 'up-right')
+        x_r, a_r = vectorplot([-0.08, -0.08, 0], 'down-left')
 
         if args.use_wandb:
             wandb.log({
@@ -485,7 +483,7 @@ if __name__ == '__main__':
                 'fields/up-right': wandb.Image(join(field_folder,
                                                     "field_up-right.jpg")),
                 'fields/down-left': wandb.Image(join(field_folder,
-                                                    "field_down-left.jpg")),
+                                                     "field_down-left.jpg")),
             })
     elif args.opr == 'cluster-latent':
 
