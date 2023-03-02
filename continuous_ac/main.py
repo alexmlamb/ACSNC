@@ -127,7 +127,7 @@ if __name__ == '__main__':
     # process arguments
     args = parser.parse_args()
 
-    args.device = ('cuda' if (not args.no_cuda) and
+    device = ('cuda' if (not args.no_cuda) and
                              torch.cuda.is_available() else 'cpu')
 
     # seed
