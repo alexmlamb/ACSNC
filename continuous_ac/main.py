@@ -511,13 +511,11 @@ if __name__ == '__main__':
         grounded_states = np.array(ast[:len(latent_states)])
         latent_states = np.array(latent_states)
 
-        # clustering
-        kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
-        predicted_labels = kmeans.predict(latent_states)
-        centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
-
         # visualize using grounded info:
         plt.clf()
+        kmeans = KMeans(n_clusters=50, random_state=0).fit(grounded_states)
+        predicted_labels = kmeans.predict(grounded_states)
+        centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
         kmean_plot_fig = plt.figure()
         plt.scatter(x=grounded_states[:, 0],
                     y=grounded_states[:, 1],
@@ -535,6 +533,9 @@ if __name__ == '__main__':
 
         # visualize and save
         plt.clf()
+        kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
+        predicted_labels = kmeans.predict(latent_states)
+        centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
         kmean_plot_fig = plt.figure()
         plt.scatter(x=latent_states[:, 0],
                     y=latent_states[:, 1],
