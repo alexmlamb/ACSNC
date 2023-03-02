@@ -209,11 +209,11 @@ class Probe(nn.Module):
         super().__init__()
         self.din = din
         self.dout = dout
-        # self.enc = nn.Sequential(nn.Linear(din, 512),
-        #                          nn.LeakyReLU(),
-        #                          nn.Linear(512, 512),
-        #                          nn.LeakyReLU(),
-        #                          nn.Linear(512, dout))
+        self.enc = nn.Sequential(nn.Linear(din, 512),
+                                 nn.LeakyReLU(),
+                                 nn.Linear(512, 512),
+                                 nn.LeakyReLU(),
+                                 nn.Linear(512, dout))
 
         # self.enc = nn.Sequential(ResMLP(256), nn.Linear(256, dout))
         # self.enc = nn.Linear(din, dout)
