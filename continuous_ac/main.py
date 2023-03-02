@@ -171,6 +171,7 @@ if __name__ == '__main__':
     os.makedirs(field_folder, exist_ok=True)
     os.makedirs(plan_folder, exist_ok=True)
     os.makedirs( os.path.join(os.getcwd(), 'data'), exist_ok=True)
+    colors = iter(plt.cm.inferno_r(np.linspace(.25, 1, 200000)))
 
     if args.opr == 'generate-data':
         X = []
@@ -206,7 +207,7 @@ if __name__ == '__main__':
                                + list(b_probe.parameters())
                                + list(forward.parameters()), lr=0.0001)
 
-        colors = iter(plt.cm.inferno_r(np.linspace(.25, 1, 200000)))
+
 
         print('Run K-mneas')
         kmeans = KMeans(n_clusters=20, verbose=1).fit(A)
