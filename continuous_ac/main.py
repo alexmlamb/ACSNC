@@ -170,6 +170,7 @@ if __name__ == '__main__':
     os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
     os.makedirs(field_folder, exist_ok=True)
     os.makedirs(plan_folder, exist_ok=True)
+    os.makedirs(model_path, exist_ok=True)
 
     if args.opr == 'generate-data':
         X = []
