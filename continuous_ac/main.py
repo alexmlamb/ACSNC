@@ -3,6 +3,7 @@ import os, time
 from os.path import join
 from datetime import datetime
 from room_obstacle_env import RoomObstacleEnv
+from room_polygon_obstacle_env import RoomPolygonObstacleEnv
 import matplotlib
 import random
 
@@ -171,7 +172,7 @@ if __name__ == '__main__':
                             help='use Weight and bias visualization lib')
     # training args
     train_args = parser.add_argument_group('wandb setup')
-    train_args.add_argument("--opr", default="high-low-plan",
+    train_args.add_argument("--opr", default="generate-data",
                             choices=['generate-data', 'train', 'cluster-latent',
                                      'generate-mdp',
                                      'debug-abstract-random-plans',
@@ -185,7 +186,7 @@ if __name__ == '__main__':
     train_args.add_argument("--max_k", default=2, type=int)
     train_args.add_argument("--do-mixup", action='store_true', default=False)
 
-    train_args.add_argument("--env", default='obstacle', choices=['rat', 'room', 'obstacle'])
+    train_args.add_argument("--env", default='polygon-obs', choices=['rat', 'room', 'obstacle', 'polygon-obs'])
 
     train_args.add_argument('--exp_id', default = 'test', type = str)
     train_args.add_argument('--from_to', default = 0, nargs = "+", type = int)
@@ -217,6 +218,8 @@ if __name__ == '__main__':
         env = RoomEnv()
     elif args.env == 'obstacle':
         env = RoomObstacleEnv()
+    elif args.env == 'polygon-obs':
+        env = RoomPolygonObstacleEnv()
 
     ac = AC(din=args.latent_dim, nk=args.k_embedding_dim, nact=2).to(device)
     enc = Encoder(100 * 100, args.latent_dim).to(device)
@@ -503,6 +506,25 @@ if __name__ == '__main__':
         # load-dataset
         dataset = pickle.load(open('data/dataset.p', 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+        
+        # manually check obstacle detection
+        plt.figure()
+        k = 0
+        grounded_traj = ast[k*100:(k+30)*100]
+
+        # plot the obstacle
+        if isinstance(env, RoomPolygonObstacleEnv):
+            for obs in env.obs_lst:
+                x_coords,y_coords = obs.exterior.xy
+                plt.plot(x_coords, y_coords, color = 'k') 
+
+        plt.plot(grounded_traj[:, 0], grounded_traj[:, 1], color = 'blue', linewidth = 0.3)
+        plt.scatter(grounded_traj[:, 0], grounded_traj[:, 1], s = 2, color = 'blue')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.0])
+
+        plt.savefig('polygon_obstacle_detection_check.png', dpi = 600, format = 'png')
+        plt.clf()
 
         print('data loaded')
 
