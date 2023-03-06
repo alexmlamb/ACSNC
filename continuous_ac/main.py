@@ -808,8 +808,14 @@ if __name__ == '__main__':
 
         from trajectory_synthesis import sample_trajectory_batch, TSynth
 
-        dataset = pickle.load(open('dataset.p', 'rb'))
+        #dataset = pickle.load(open('dataset.p', 'rb'))
+        dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+
+        for j in range(0,100000):
+            print(ast[j], A[j])
+
+        raise Exception('done')
 
         maxmove = 0
         for j in range(0, len(ast) - 7):
@@ -830,7 +836,7 @@ if __name__ == '__main__':
         for i in range(0, 300000):
 
             s = sample_trajectory_batch(ast, 256, k)
-            loss, spred = tsynth.loss(s[:, 0:1], s[:, -1:], s)
+            loss, spred = tsynth.loss(s[:, 0:1], s[:, -1:]*0.0, s)
 
             loss.backward()
             opt.step()
@@ -840,9 +846,14 @@ if __name__ == '__main__':
                 print('-------------------------')
                 print(i, loss)
                 s0_test = torch.ones((1, 2)).cuda() * 0.0
-                sk_test = torch.ones((1, 2)).cuda() * 1.0
+                sk_test = torch.ones((1, 2)).cuda() * 0.0
 
-                traj = tsynth(s0_test, sk_test)
+                s0_test[:,0] += 0.4
+                s0_test[:,1] += 0.1
+                sk_test[:,0] += 0.6
+                sk_test[:,1] += 0.1
+
+                traj = tsynth(s0_test, sk_test*0.0)
 
                 print('true start', s0_test)
                 print('k', k)

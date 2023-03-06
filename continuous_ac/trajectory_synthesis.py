@@ -55,7 +55,7 @@ class TSynth(nn.Module):
 
         if True:
             mu_prior, std_prior = torch.chunk(self.prior(zc), 2, dim=1)
-            std_prior = torch.exp(std_prior) * 0.001 + 1e-5
+            std_prior = torch.exp(std_prior) * 1.001 + 1e-5
             prior = torch.distributions.normal.Normal(mu_prior, std_prior)
             sample = prior.rsample()
             zpred = self.decoder(torch.cat([zc, sample], dim=1))
