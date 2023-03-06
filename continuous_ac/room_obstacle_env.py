@@ -149,8 +149,9 @@ class RoomObstacleEnv:
         obs_lst = []
         #obs_lst.append(LineString([(0.63,0.25), (0.63, 0.75)]))
 
-        obs_lst.append(LineString([(0.501,0.001), (0.501, 0.401)]))
-        obs_lst.append(LineString([(0.501,0.601), (0.501, 1.01)]))
+        delta = 0.01
+        obs_lst.append(LineString([(0.501,0.001 - delta), (0.501, 0.401)]))
+        obs_lst.append(LineString([(0.501,0.601 - delta), (0.501, 1.01)]))
         obs_lst.append(LineString([(0.201,0.401), (0.801, 0.401)]))
         obs_lst.append(LineString([(0.201,0.601), (0.801, 0.601)]))
 
