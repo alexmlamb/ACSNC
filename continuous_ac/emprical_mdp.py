@@ -39,10 +39,12 @@ class EmpiricalMDP:
         transition = np.empty((len(self.unique_states), len(self.unique_states), len(self.action[0])))
         transition[:, :, :] = np.nan
         for state in self.unique_states:
+            sample_num = sum(self.state == state)
             for next_state in self.unique_states:
                 _filter = np.logical_and(self.state == state,
                                          self.next_state == next_state)
-                if True in _filter:
+                # SC: add threshold to remove spurious feasible paths
+                if True in _filter and sum(_filter) > 0.05*sample_num :
                     transition[self.unique_states_dict[state], self.unique_states_dict[next_state], :] = self.action[
                         _filter].mean(axis=0)
         return transition
