@@ -607,7 +607,10 @@ if __name__ == '__main__':
         latent_states, states_label = [], []
         for i in range(0, len(X), 256):
             with torch.no_grad():
-                _aug_latent_state = cluster_trans.cluster_label_transform(X[i:i + 256])
+                if args.use_augmented_latent_clustering:
+                    _aug_latent_state = cluster_trans.cluster_label_transform(X[i:i + 256])
+                else:
+                    _aug_latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                 latent_states += _aug_latent_state[:, :256].cpu().numpy().tolist()
                 states_label += kmeans.predict(_aug_latent_state.cpu().numpy().tolist()).tolist()
 
