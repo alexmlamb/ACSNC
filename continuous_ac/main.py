@@ -3,6 +3,7 @@ import os, time
 from os.path import join
 from datetime import datetime
 from room_obstacle_env import RoomObstacleEnv
+from room_polygon_obstacle_env import RoomPolygonObstacleEnv
 import matplotlib
 import random
 
@@ -117,10 +118,53 @@ class LatentWrapper(nn.Module):
         return self.latent(z, a, detach=False)
 
 
+class Cluster_Transform:
+    def __init__(self, enc, fwd_dyn, device='cuda') -> None:
+        self.enc = enc
+        self.fwd_dyn = fwd_dyn
+        self.device = device
+
+    def cluster_label_transform(self, X):
+        # generate label [z, f(z, a_1), f(z, a_2), f(z, a_3), f(z, a_4)] from observations X for clustering
+        # with z = enc(X) being the latent state and f(.,.) being the latent forward dynamics
+        img = torch.FloatTensor(X).to(self.device)
+        z = self.enc(img)
+
+        actions = torch.FloatTensor([[0.1, 0.0], [-0.1, 0.0], [0.0, 0.1], [0.0, -0.1]]).to(self.device)
+        output = z
+        for i in range(4):
+            y = self.fwd_dyn(z, actions[i].unsqueeze(0).repeat(z.size(0), 1))
+            output = torch.cat((output, y.detach()), axis=1)
+
+        return output
+
+    def cluster_label_transform_latent(self, z):
+        # augment the latent state z for clustering
+        actions = torch.FloatTensor([[0.1, 0.0], [-0.1, 0.0], [0.0, 0.1], [0.0, -0.1]]).to(self.device)
+        output = z
+        for i in range(4):
+            y = self.fwd_dyn(z, actions[i].unsqueeze(0).repeat(z.size(0), 1))
+            output = torch.cat((output, y.detach()), axis=1)
+
+        return output
+
+
+# def cluster_label_transform(X, enc, fwd_dyn, device = 'cuda'):
+#     # generate label [z, f(z, a_1), f(z, a_2), f(z, a_3), f(z, a_4)] from observations X for clustering
+#     # with z = enc(X) being the latent state and f(.,.) being the latent forward dynamics
+#     img = torch.FloatTensor(X).to(device)
+#     z = enc(img)
+
+#     actions = torch.FloatTensor([[0.1, 0.0], [-0.1, 0.0], [0.0, 0.1], [0.0, -0.1]]).to(device)
+#     output = z
+#     for i in range(4):
+#         y = fwd_dyn(z, actions[i].unsqueeze(0).repeat(z.size(0), 1))
+#         output = torch.cat((output, y.detach()), axis = 1)
+
+#     return output
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--result-dir", default=os.getcwd(), type=int)
-    parser.add_argument("--data-dir", default=os.path.join(os.getcwd(), 'data'), type=int)
 
     # wandb setup
     wandb_args = parser.add_argument_group('wandb setup')
@@ -130,7 +174,7 @@ if __name__ == '__main__':
                             help='use Weight and bias visualization lib')
     # training args
     train_args = parser.add_argument_group('wandb setup')
-    train_args.add_argument("--opr", default="high-low-plan",
+    train_args.add_argument("--opr", default="generate-data",
                             choices=['generate-data', 'train', 'cluster-latent',
                                      'generate-mdp',
                                      'debug-abstract-random-plans',
@@ -144,12 +188,14 @@ if __name__ == '__main__':
     train_args.add_argument("--max_k", default=2, type=int)
     train_args.add_argument("--do-mixup", action='store_true', default=False)
 
-    train_args.add_argument("--env", default='obstacle', choices=['rat', 'room', 'obstacle'])
+    train_args.add_argument("--env", default='polygon-obs', choices=['rat', 'room', 'obstacle', 'polygon-obs'])
 
     train_args.add_argument('--exp_id', default='test', type=str)
     train_args.add_argument('--from_to', default=0, nargs="+", type=int)
     train_args.add_argument('--scaling_factor', default=1.0, type=float)
     train_args.add_argument("--seed", default=0, type=int)
+    wandb_args.add_argument('--use-augmented-latent-clustering', action='store_true',
+                            help='uses augmented latent states for clustering')
 
     # process arguments
     args = parser.parse_args()
@@ -176,6 +222,8 @@ if __name__ == '__main__':
         env = RoomEnv()
     elif args.env == 'obstacle':
         env = RoomObstacleEnv()
+    elif args.env == 'polygon-obs':
+        env = RoomPolygonObstacleEnv()
 
     ac = AC(din=args.latent_dim, nk=args.k_embedding_dim, nact=2).to(device)
     enc = Encoder(100 * 100, args.latent_dim).to(device)
@@ -187,10 +235,10 @@ if __name__ == '__main__':
     ema_forward = EMA(forward, beta=0.99)
     ema_a_probe = EMA(a_probe.enc, beta=0.99)
 
-    field_folder = os.path.join(args.results_dir, "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
-    plan_folder = os.path.join(args.results_dir, "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
-    dataset_path = os.path.join(args.dataset_dir, 'dataset.p')
-    model_path = os.path.join(args.results_dir, 'model.p')
+    field_folder = os.path.join(os.getcwd(), "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
+    plan_folder = os.path.join(os.getcwd(), "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
+    dataset_path = os.path.join(os.getcwd(), 'data', 'dataset.p')
+    model_path = os.path.join(os.getcwd(), 'data', 'model.p')
     os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
     os.makedirs(field_folder, exist_ok=True)
     os.makedirs(plan_folder, exist_ok=True)
@@ -232,7 +280,7 @@ if __name__ == '__main__':
         colors = iter(plt.cm.inferno_r(np.linspace(.25, 1, 200000)))
         print('Num samples', X.shape[0])
 
-        print('Run K-means')
+        print('Run K-mneas')
         kmeans = KMeans(n_clusters=20, verbose=1).fit(A)
         print(' K-Means done')
 
@@ -445,8 +493,6 @@ if __name__ == '__main__':
                             'a_probe': a_probe.state_dict(),
                             'b_probe': b_probe.state_dict(),
                             'e_probe': e_probe.state_dict()}, model_path)
-    elif args.opr == 'train-discrete-latent':
-        pass
     elif args.opr == 'cluster-latent':
 
         # load model
@@ -456,31 +502,59 @@ if __name__ == '__main__':
         enc = enc.eval().to(device)
         a_probe = a_probe.eval().to(device)
 
+        forward.load_state_dict(model['forward'])
+        forward.eval().to(device)
+
+        cluster_trans = Cluster_Transform(enc, forward, device=device)
+
         # load-dataset
         dataset = pickle.load(open('data/dataset.p', 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
+        # manually check obstacle detection
+        plt.figure()
+        k = 0
+        grounded_traj = ast[k * 100:(k + 30) * 100]
+
+        # plot the obstacle
+        if isinstance(env, RoomPolygonObstacleEnv):
+            for obs in env.obs_lst:
+                x_coords, y_coords = obs.exterior.xy
+                plt.plot(x_coords, y_coords, color='k')
+
+        plt.plot(grounded_traj[:, 0], grounded_traj[:, 1], color='blue', linewidth=0.3)
+        plt.scatter(grounded_traj[:, 0], grounded_traj[:, 1], s=2, color='blue')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.0])
+
+        plt.savefig('polygon_obstacle_detection_check.png', dpi=600, format='png')
+        plt.clf()
+
         print('data loaded')
 
         # generate latent-states and ground them
-        latent_states = []
+        aug_latent_states = []
         predicted_grounded_states = []
         for i in range(0, X.shape[0], 256):
             with torch.no_grad():
-                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
-                latent_states += _latent_state.cpu().numpy().tolist()
-                predicted_grounded_states += a_probe(_latent_state).cpu().numpy().tolist()
+                if args.use_augmented_latent_clustering:
+                    _aug_latent_state = cluster_trans.cluster_label_transform(X[i:i + 256])
+                else:
+                    _aug_latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
+                aug_latent_states += _aug_latent_state.cpu().numpy().tolist()
+                predicted_grounded_states += a_probe(_aug_latent_state[:, :256]).cpu().numpy().tolist()
 
         predicted_grounded_states = np.array(predicted_grounded_states)
-        grounded_states = np.array(ast[:len(latent_states)])
-        latent_states = np.array(latent_states)
+        grounded_states = np.array(ast[:len(aug_latent_states)])
+        aug_latent_states = np.array(aug_latent_states)
+        latent_state = aug_latent_states[:, :256]
 
         print('about to run kmeans')
 
         # clustering
-        kmeans = KMeans(n_clusters=50, random_state=0).fit(latent_states)
-        predicted_labels = kmeans.predict(latent_states)
-        centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
+        kmeans = KMeans(n_clusters=50, random_state=0).fit(aug_latent_states)
+        predicted_labels = kmeans.predict(aug_latent_states)
+        centroids = a_probe(torch.FloatTensor(kmeans.cluster_centers_[:, :256]).to(device)).cpu().detach().numpy()
 
         # visualize and save
         kmean_plot_fig = plt.figure()
@@ -515,6 +589,10 @@ if __name__ == '__main__':
         enc.load_state_dict(model['enc'])
         enc.eval()
 
+        forward.load_state_dict(model['forward'])
+        forward.eval().to(device)
+        cluster_trans = Cluster_Transform(enc, forward, device=device)
+
         # load clustering
         kmeans_info = pickle.load(open('kmeans_info.p', 'rb'))
         kmeans = kmeans_info['kmeans']
@@ -529,9 +607,12 @@ if __name__ == '__main__':
         latent_states, states_label = [], []
         for i in range(0, len(X), 256):
             with torch.no_grad():
-                _latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
-                latent_states += _latent_state.cpu().numpy().tolist()
-                states_label += kmeans.predict(_latent_state.cpu().numpy().tolist()).tolist()
+                if args.use_augmented_latent_clustering:
+                    _aug_latent_state = cluster_trans.cluster_label_transform(X[i:i + 256])
+                else:
+                    _aug_latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
+                latent_states += _aug_latent_state[:, :256].cpu().numpy().tolist()
+                states_label += kmeans.predict(_aug_latent_state.cpu().numpy().tolist()).tolist()
 
         next_state = np.array(states_label[1:])
         next_state = next_state[np.abs(A[:-1]).sum(1) < 0.1]
@@ -605,7 +686,7 @@ if __name__ == '__main__':
 
         # rollout
         max_rollout_steps = 1000
-        debug_plan_plots_dir = os.path.join(args.results_dir, 'debug_plots')
+        debug_plan_plots_dir = os.path.join(os.getcwd(), 'debug_plots')
         os.makedirs(debug_plan_plots_dir, exist_ok=True)
         for plan_i, plan in enumerate(abstract_plans):
 
@@ -671,7 +752,7 @@ if __name__ == '__main__':
             plt.clf()
 
     elif args.opr == 'debug-dijkstra-plans':
-        dijkstra_plan_dir = os.path.join(args.results_dir, 'dijkstra-plans')
+        dijkstra_plan_dir = os.path.join(os.getcwd(), 'dijkstra-plans')
         os.makedirs(dijkstra_plan_dir, exist_ok=True)
 
         # load abstract mdp
@@ -755,7 +836,7 @@ if __name__ == '__main__':
             print(executed_plan)
 
     elif args.opr == 'debug-dijkstra-plans-for-all-states':
-        dijkstra_plan_dir = os.path.join(args.results_dir, 'dijkstra-plans-for-all-states')
+        dijkstra_plan_dir = os.path.join(os.getcwd(), 'dijkstra-plans-for-all-states')
         os.makedirs(dijkstra_plan_dir, exist_ok=True)
 
         # load abstract mdp
@@ -880,11 +961,11 @@ if __name__ == '__main__':
 
     elif args.opr == 'traj_opt':
         # load abstract mdp
-        mdp_path = os.path.join(args.results_dir, 'empirical_mdp.p')
+        mdp_path = os.path.join(os.getcwd(), 'empirical_mdp.p')
         empirical_mdp = pickle.load(open(mdp_path, 'rb'))
 
         # load models
-        model_path = os.path.join(args.results_dir, 'model.p')
+        model_path = os.path.join(os.getcwd(), 'model.p')
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
@@ -899,7 +980,7 @@ if __name__ == '__main__':
         grounded_cluster_centers = a_probe(torch.FloatTensor(kmeans.cluster_centers_).to(device)).cpu().detach().numpy()
 
         # load-dataset
-        dataset_path = os.path.join(args.results_dir, 'dataset.p')
+        dataset_path = os.path.join(os.getcwd(), 'dataset.p')
         dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
         X = X[np.abs(A).sum(1) < 0.1]
@@ -908,8 +989,8 @@ if __name__ == '__main__':
 
         # initialization
         exp_id = args.exp_id
-        traj_opt_data_path = os.path.join(args.results_dir, 'high-low-data', f'{exp_id}.p')
-        traj_opt_fig_dir = os.path.join(args.results_dir, 'high-low-data')
+        traj_opt_data_path = os.path.join(os.getcwd(), 'high-low-data', f'{exp_id}.p')
+        traj_opt_fig_dir = os.path.join(os.getcwd(), 'high-low-data')
 
         # specify start state and goal state
         from_to = args.from_to
@@ -1032,17 +1113,19 @@ if __name__ == '__main__':
 
     elif args.opr == 'high-low-plan':
         # load abstract mdp
-        mdp_path = os.path.join(args.results_dir, 'empirical_mdp.p')
+        mdp_path = os.path.join(os.getcwd(), 'empirical_mdp.p')
         empirical_mdp = pickle.load(open(mdp_path, 'rb'))
 
         # load models
-        model_path = os.path.join(args.results_dir, 'data', 'model.p')
+        model_path = os.path.join(os.getcwd(), 'data', 'model.p')
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
-        enc.eval()
+        enc.eval().to(device)
 
         forward.load_state_dict(model['forward'])
-        forward.eval()
+        forward.eval().to(device)
+
+        cluster_trans = Cluster_Transform(enc, forward, device=device)
 
         a_probe.load_state_dict(model['a_probe'])
 
@@ -1052,7 +1135,7 @@ if __name__ == '__main__':
         grounded_cluster_centers = kmeans_info['grounded-cluster-center']
 
         # load-dataset
-        dataset_path = os.path.join(args.results_dir, 'data', 'dataset.p')
+        dataset_path = os.path.join(os.getcwd(), 'data', 'dataset.p')
         dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
@@ -1067,14 +1150,14 @@ if __name__ == '__main__':
 
         # initialization
         exp_id = args.exp_id
-        traj_opt_data_path = os.path.join(args.results_dir, 'high_low_data', f'{exp_id}.p')
-        traj_opt_fig_dir = os.path.join(args.results_dir, 'high_low_data')
+        traj_opt_data_path = os.path.join(os.getcwd(), 'high_low_data', f'{exp_id}.p')
+        traj_opt_fig_dir = os.path.join(os.getcwd(), 'high_low_data')
         os.makedirs(traj_opt_fig_dir, exist_ok=True)
 
         # specify start state and goal state
         from_to = args.from_to
         if not isinstance(from_to, list):
-            from_to = [13, 33]
+            from_to = [7, 6]
 
         # initial mdp state
         init_mdp_state = from_to[0]
@@ -1092,7 +1175,9 @@ if __name__ == '__main__':
         target_lat_state = init_lat_state + scaling_factor * (target_lat_state - init_lat_state)
 
         target_gt_agent_state = a_probe(target_lat_state)[0]
-        target_mdp_state = kmeans.predict(target_lat_state.detach().cpu())[0]
+
+        aug_target_lat_state = cluster_trans.cluster_label_transform_latent(target_lat_state)
+        target_mdp_state = kmeans.predict(aug_target_lat_state.detach().cpu())[0]
 
         # initialize low level planning parameters
         n_batch, T, N = 10, 15, 3
@@ -1133,14 +1218,15 @@ if __name__ == '__main__':
             start_time = time.time()
 
             # call high level planner
-            current_mdp_state = kmeans.predict(z_t.detach().cpu())[0]
+            aug_z_t = cluster_trans.cluster_label_transform_latent(z_t)
+            current_mdp_state = kmeans.predict(aug_z_t.detach().cpu())[0]
             executed_mdp_states.append(current_mdp_state)
 
             if current_mdp_state != target_mdp_state:
                 next_mdp_state = dijkstra_planner.step(current_mdp_state, target_mdp_state)
                 planned_mdp_states.append(next_mdp_state)
 
-                next_lat_state = kmeans.cluster_centers_[next_mdp_state]
+                next_lat_state = kmeans.cluster_centers_[next_mdp_state][:256]
                 next_lat_state = torch.FloatTensor(next_lat_state).unsqueeze(0).to(device)
             else:
                 next_lat_state = target_lat_state
