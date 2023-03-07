@@ -206,6 +206,7 @@ if __name__ == '__main__':
     # process arguments
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    args.result_dir = os.path.join(args.result_dir, args.env, f'latent-dim-{args.latent_dim}')
     os.makedirs(args.result_dir, exist_ok=True)
 
     # seed
@@ -244,12 +245,13 @@ if __name__ == '__main__':
 
     field_folder = os.path.join(args.result_dir, "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
     plan_folder = os.path.join(args.result_dir, "fields")  # + datetime.strftime(datetime.now(), '%m-%d-%y_%H-%M')
-    dataset_path = os.path.join(args.data_dir, 'dataset.p')
+    dataset_path = os.path.join(args.data_dir, args.env, 'dataset.p')
     model_path = os.path.join(args.result_dir, 'model.p')
     latent_discrete_mdp_path = os.path.join(args.result_dir, 'latent_discrete_mdp.p')
     os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
     os.makedirs(field_folder, exist_ok=True)
     os.makedirs(plan_folder, exist_ok=True)
+    os.makedirs(os.path.join(args.data_dir, args.env), exist_ok=True)
 
     if args.opr == 'generate-data':
         X = []

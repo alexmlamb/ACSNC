@@ -47,7 +47,9 @@ class LatentDiscreteMDP(nn.Module):
                                                 nn.Linear(256, action_dim))
 
         self.optimizer = Adam([{'params': self.encoder.parameters()},
-                               {'params': self.decoder.parameters()}], lr=1e-3)
+                               {'params': self.decoder.parameters()},
+                               {'params': self.inverse_transition.parameters()}],
+                              lr=1e-3)
 
     def update(self, latent_state, k_latent_state, k, action):
         discrete_latent = self.encoder(latent_state)
