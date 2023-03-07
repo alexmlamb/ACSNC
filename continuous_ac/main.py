@@ -707,13 +707,14 @@ if __name__ == '__main__':
                                      reward=np.zeros_like(A))
 
         # draw action vectors on cluster-mdp
-        for cluster_i, cluster_center in enumerate(grounded_cluster_centers):
-            for action in [_ for _ in empirical_mdp.transition[empirical_mdp.unique_states_dict[cluster_i]] if
-                           not np.isnan(_).all()]:
-                plt.quiver(cluster_center[0], cluster_center[1], action[0], action[1])
-                print('quiver', cluster_center[0], cluster_center[1], action[0], action[1])
-        plt.savefig(join(field_folder, 'latent_cluster_with_action_vector.png'))
-        plt.clf()
+        if args.clustering_mode in ['latent-state', 'augmented-latent-state']:
+            for cluster_i, cluster_center in enumerate(grounded_cluster_centers):
+                for action in [_ for _ in empirical_mdp.transition[empirical_mdp.unique_states_dict[cluster_i]] if
+                               not np.isnan(_).all()]:
+                    plt.quiver(cluster_center[0], cluster_center[1], action[0], action[1])
+                    print('quiver', cluster_center[0], cluster_center[1], action[0], action[1])
+            plt.savefig(join(field_folder, 'latent_cluster_with_action_vector.png'))
+            plt.clf()
 
         transition_img = empirical_mdp.visualize_transition(save_path=join(field_folder, 'transition_img.png'))
         # save
