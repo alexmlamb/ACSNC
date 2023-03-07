@@ -655,7 +655,7 @@ if __name__ == '__main__':
         if args.clustering_mode == 'latent-discrete':
             latent_discrete_mdp = LatentDiscreteMDP(args.latent_dim, args.discrete_dim, len(A[0]),
                                                     num_embeddings=10, embedding_dim=10)
-            latent_discrete_mdp = latent_discrete_mdp.load_state_dict(torch.load(latent_discrete_mdp_path, map_location=torch.device('cpu')))
+            latent_discrete_mdp.load_state_dict(torch.load(latent_discrete_mdp_path, map_location=torch.device('cpu')))
             latent_discrete_mdp = latent_discrete_mdp.to(device)
         else:
             kmeans_info = pickle.load(open(os.path.join(args.results_dir, 'kmeans_info.p'), 'rb'))
