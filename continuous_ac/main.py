@@ -559,7 +559,7 @@ if __name__ == '__main__':
         cluster_trans = Cluster_Transform(enc, forward, device=device)
 
         # load-dataset
-        dataset = pickle.load(open('data/dataset.p', 'rb'))
+        dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
         # manually check obstacle detection
@@ -671,6 +671,7 @@ if __name__ == '__main__':
                 elif args.clustering_mode == 'latent-discrete':
                     _aug_latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                     latent_states += _aug_latent_state[:, :256].cpu().numpy().tolist()
+
                     for discrete_state in latent_discrete_mdp.encoder(_aug_latent_state).cpu().numpy().tolist():
                         discrete_state = tuple(discrete_state)
                         if discrete_state not in state_value_idx_map:
@@ -1024,7 +1025,7 @@ if __name__ == '__main__':
 
     elif args.opr == 'low-level-plan':
 
-        model = torch.load('results/model.p', map_location=torch.device('cpu'))
+        model = torch.load('results/polygon-obs/latent-dim-256/model.p', map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
 
@@ -1034,7 +1035,7 @@ if __name__ == '__main__':
         empirical_mdp = pickle.load(open(mdp_path, 'rb'))
 
         # load models
-        model_path = os.path.join(args.result_dir, 'results/model.p')
+        model_path = os.path.join(args.result_dir, 'results/polygon-obs/latent-dim-256/model.p')
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval()
@@ -1186,7 +1187,7 @@ if __name__ == '__main__':
         empirical_mdp = pickle.load(open(mdp_path, 'rb'))
 
         # load models
-        model_path = os.path.join(args.result_dir, 'data', 'results/model.p')
+        model_path = os.path.join(args.result_dir, 'data', 'results/polygon-obs/latent-dim-256/model.p')
         model = torch.load(model_path, map_location=torch.device('cpu'))
         enc.load_state_dict(model['enc'])
         enc.eval().to(device)

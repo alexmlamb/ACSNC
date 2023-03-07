@@ -33,7 +33,7 @@ class LatentDiscreteMDP(nn.Module):
     def __init__(self, latent_dim, discrete_dim, action_dim, num_embeddings, embedding_dim):
         super(LatentDiscreteMDP, self).__init__()
         self.encoder = nn.Sequential(nn.Linear(latent_dim, 256),
-                                     nn.LeakyReLU(),
+                                     nn.Tanh(),
                                      nn.Linear(256, discrete_dim),
                                      BinarySigmoid())
 
