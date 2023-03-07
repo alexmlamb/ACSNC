@@ -186,6 +186,9 @@ if __name__ == '__main__':
                                      'debug-dijkstra-plans-for-all-states',
                                      'trajectory-synthesis',
                                      'qplanner', 'traj_opt', 'high-low-plan', 'train-discrete-latent-mdp'])
+    train_args.add_argument("--clustering-mode", default="latent-state", choices=['latent-discrete',
+                                                                                  'augmented-latent-state',
+                                                                                  'latent-state'])
     train_args.add_argument("--latent-dim", default=256, type=int)
     train_args.add_argument("--batch-size", default=256, type=int)
     train_args.add_argument("--num-data-samples", default=500000, type=int)
@@ -193,7 +196,6 @@ if __name__ == '__main__':
     train_args.add_argument("--max_k", default=2, type=int)
     train_args.add_argument("--discrete_dim", default=4, type=int)
     train_args.add_argument("--do-mixup", action='store_true', default=False)
-
     train_args.add_argument("--env", default='polygon-obs', choices=['rat', 'room', 'obstacle', 'polygon-obs'])
 
     train_args.add_argument('--exp_id', default='test', type=str)
@@ -679,10 +681,12 @@ if __name__ == '__main__':
                             state_counter += 1
                         discrete_state_idx = state_value_idx_map[discrete_state]
                         states_label.append(discrete_state_idx)
-                else:
+                elif args.clustering_mode == 'latent-state':
                     _aug_latent_state = enc(torch.FloatTensor(X[i:i + 256]).to(device))
                     latent_states += _aug_latent_state[:, :256].cpu().numpy().tolist()
                     states_label += kmeans.predict(_aug_latent_state.cpu().numpy().tolist()).tolist()
+                else:
+                    raise ValueError
 
         next_state = np.array(states_label[1:])
         next_state = next_state[np.abs(A[:-1]).sum(1) < 0.1]
