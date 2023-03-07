@@ -523,9 +523,8 @@ if __name__ == '__main__':
             for batch in range(batch_count):
                 xt, xtn, xtk, k, action, astate, estate = sample_batch(X, A, ast, est, args.batch_size,
                                                                        max_k=args.max_k)
-                with torch.no_grad():
-                    latent_obs = enc(xt.to(device))
-                    latent_k_obs = enc(xtk.to(device))
+                latent_obs = enc(xt.to(device)).detach()
+                latent_k_obs = enc(xtk.to(device)).detach()
                 loss_info = latent_discrete_mdp.update(latent_obs,
                                                        latent_k_obs,
                                                        k.to(device),
