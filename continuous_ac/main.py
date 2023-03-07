@@ -647,18 +647,23 @@ if __name__ == '__main__':
         forward.eval().to(device)
         cluster_trans = Cluster_Transform(enc, forward, device=device)
 
+        # load-dataset
+        dataset = pickle.load(open(dataset_path, 'rb'))
+        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+
         # load clustering
         if args.clustering_mode == 'latent-discrete':
-            latent_discrete_mdp = torch.load(latent_discrete_mdp_path, map_location=torch.device('cpu')).to(device)
+            latent_discrete_mdp = LatentDiscreteMDP(args.latent_dim, args.discrete_dim, len(A[0]),
+                                                    num_embeddings=10, embedding_dim=10)
+            latent_discrete_mdp = latent_discrete_mdp.load_state_dict(torch.load(latent_discrete_mdp_path, map_location=torch.device('cpu')))
+            latent_discrete_mdp = latent_discrete_mdp.to(device)
         else:
             kmeans_info = pickle.load(open(os.path.join(args.results_dir, 'kmeans_info.p'), 'rb'))
             kmeans = kmeans_info['kmeans']
             kmeans_fig = kmeans_info['kmeans-plot']
             grounded_cluster_centers = kmeans_info['grounded-cluster-center']
 
-        # load-dataset
-        dataset = pickle.load(open(dataset_path, 'rb'))
-        X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
+
 
         # generate latent-states and find corresponding label
         latent_states, states_label = [], []
