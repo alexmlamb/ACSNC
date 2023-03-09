@@ -751,7 +751,7 @@ if __name__ == '__main__':
                                                     num_embeddings=10, embedding_dim=10)
             latent_discrete_mdp.load_state_dict(torch.load(latent_discrete_mdp_path, map_location=torch.device('cpu')))
             latent_discrete_mdp = latent_discrete_mdp.to(device)
-            state_value_idx_map = pickle.load(open(os.path.join(args.result_dir, 'state_value_idx_map.p')))
+            state_value_idx_map = pickle.load(open(os.path.join(args.result_dir, 'state_value_idx_map.p'), 'rb' ))
 
         # load dynamics
         model = torch.load(model_path, map_location=torch.device('cpu'))
