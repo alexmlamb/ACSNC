@@ -738,6 +738,7 @@ if __name__ == '__main__':
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
         X = X[np.abs(A).sum(1) < 0.1]
         ast = ast[np.abs(A).sum(1) < 0.1]
+        A = A[:-1]
         A = A[np.abs(A).sum(1) < 0.1]
 
         # load clustering
