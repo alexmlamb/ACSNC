@@ -7,6 +7,8 @@ from room_polygon_obstacle_env import RoomPolygonObstacleEnv
 import matplotlib
 import random
 
+from dist_pred_model import DistPred
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import argparse
@@ -187,6 +189,7 @@ if __name__ == '__main__':
     train_args.add_argument("--k_embedding_dim", default=45, type=int)
     train_args.add_argument("--max_k", default=2, type=int)
     train_args.add_argument("--do-mixup", action='store_true', default=False)
+    train_args.add_argument("--dist-learn", action='store_true', default=False)
 
     train_args.add_argument("--env", default='polygon-obs', choices=['rat', 'room', 'obstacle', 'polygon-obs'])
 
@@ -231,6 +234,7 @@ if __name__ == '__main__':
     a_probe = Probe(args.latent_dim, 2).to(device)
     b_probe = Probe(args.latent_dim, 2).to(device)
     e_probe = Probe(args.latent_dim, 2).to(device)
+    dist_pred = DistPred(args.latent_dim, 2000).to(device)
     ema_enc = EMA(enc, beta=0.99)
     ema_forward = EMA(forward, beta=0.99)
     ema_a_probe = EMA(a_probe.enc, beta=0.99)
@@ -275,7 +279,8 @@ if __name__ == '__main__':
                                + list(enc.parameters())
                                + list(a_probe.parameters())
                                + list(b_probe.parameters())
-                               + list(forward.parameters()), lr=0.0001)
+                               + list(forward.parameters())
+                               + list(dist_pred.parameters()), lr=0.0001)
 
         colors = iter(plt.cm.inferno_r(np.linspace(.25, 1, 200000)))
         print('Num samples', X.shape[0])
@@ -319,7 +324,7 @@ if __name__ == '__main__':
 
             if args.do_mixup:
                 # add probing loss in mixed hidden states.
-                mix_lamb = random.uniform(0, 1)
+                mix_lamb = np.random.beta(0.5,0.5)#random.uniform(0, 1)
                 mix_ind = torch.randperm(st.shape[0])
 
                 st_mix = st * mix_lamb + st[mix_ind] * (1 - mix_lamb)
@@ -331,6 +336,17 @@ if __name__ == '__main__':
                 z_loss_mix, _ = forward.loss(st_mix, stn_mix, a, do_detach=False)
 
                 loss += z_loss_mix
+
+
+            if args.dist_learn:
+                xt_d, _, xtk_d, k_d, _, _, _ = sample_batch(X, A, ast, est, 128, max_k=2000-1)
+                st_d = enc(xt_d).detach()
+                stk_d = enc(xtk_d).detach()
+
+                dist_pred_loss = dist_pred.loss(st_d, stk_d, k_d)
+
+                loss += dist_pred_loss
+
 
             loss += ac_loss + ap_loss + ep_loss + z_loss
             loss.backward()
@@ -361,6 +377,39 @@ if __name__ == '__main__':
             ema_forward.eval()
             ema_enc.eval()
 
+
+            def distplot():
+                print("visualize distances!")
+
+                xs = []
+                xl = []
+                for a in range(2, 99, 2):
+                    for b in range(2, 99, 2):
+                        start_true_s = [0.45, 0.1]
+                        true_s = [a * 1.0 / 100, b * 1.0 / 100]
+                        x = env.synth_obs(ap=true_s)
+                        xs_obs = env.synth_obs(ap=start_true_s)
+                        xl.append(x)
+                        xs.append(xs_obs)
+
+                xl = torch.Tensor(xl).to(device)
+                xs = torch.Tensor(xs).to(device)
+
+                zl = ema_enc(xl)
+                zs = ema_enc(xs)
+
+                dist_vals = dist_pred.predict_k(zl,zs)
+
+                sl_probe = ema_a_probe(zl)
+                ss_probe = ema_a_probe(zs)
+
+                print('shapes', dist_vals.shape, sl_probe.shape, ss_probe.shape)
+
+                plt.clf()
+                plt.scatter(sl_probe.data.cpu()[:,0], sl_probe.data.cpu()[:,1], c=dist_vals.data.cpu())
+                plt.colorbar()
+                plt.legend()
+                plt.savefig(join(field_folder, rf"distmap.jpg"))
 
             def vectorplot(a_use, name):
 
@@ -472,6 +521,8 @@ if __name__ == '__main__':
                 x_r, a_r = vectorplot([-0.1, -0.1], 'down-left')
 
                 squareplot(x_r, a_r)
+
+                distplot()
 
                 if args.use_wandb:
                     wandb.log({
@@ -893,44 +944,59 @@ if __name__ == '__main__':
     elif args.opr == 'trajectory-synthesis':
 
         from trajectory_synthesis import sample_trajectory_batch, TSynth
+        #from classifier_free_guidance import Unet1D, GaussianDiffusion1D
+        from guided_diffusion import Unet1D, GaussianDiffusion1D, cond_fn
 
         #dataset = pickle.load(open('dataset.p', 'rb'))
         dataset = pickle.load(open(dataset_path, 'rb'))
         X, A, ast, est = dataset['X'], dataset['A'], dataset['ast'], dataset['est']
 
-        for j in range(0,100000):
-            print(ast[j], A[j])
+        k = 32
+        ns = 2
+        na = 2
+        #tsynth = TSynth(dim=2, k=k).cuda()
 
-        raise Exception('done')
+        model = Unet1D(
+            dim = 64,
+            dim_mults = (1, 2, 4, 8),
+            channels = ns,
+            self_condition=True
+        ).cuda()
 
-        maxmove = 0
-        for j in range(0, len(ast) - 7):
-            s = torch.Tensor(np.array(ast[j: j + 6]))
-            mm = (s[-1] - s[0]).sum().item()
-            diff = (s[0]).sum().item()
 
-            if mm > maxmove and diff < 0.1:
-                maxmove = mm
-                print(s)
+        diffusion = GaussianDiffusion1D(
+            model,
+            seq_length = k,
+            timesteps = 4000,
+            objective = 'pred_noise',
+            loss_type='l1',
+        ).cuda()
 
-        print('maxmove', maxmove)
+        opt = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-        k = 10
-        tsynth = TSynth(dim=2, k=k).cuda()
-        opt = torch.optim.Adam(tsynth.parameters(), lr=0.0001)
+        loss_lst = []
 
         for i in range(0, 300000):
 
-            s = sample_trajectory_batch(ast, 256, k)
-            loss, spred = tsynth.loss(s[:, 0:1], s[:, -1:]*0.0, s)
+            s = sample_trajectory_batch(ast, 64, k)
+            s = s.permute(0,2,1) #bs x 2 x 32
+
+            #loss = diffusion(s, classes = torch.cat([s[:,:,0], s[:,:,-1]],dim=1))
+            #loss, spred = tsynth.loss(s[:, 0:1], s[:, -1:]*0.0, s)
+            loss = diffusion(s)
+
+            loss_lst.append(loss.item())
 
             loss.backward()
             opt.step()
             opt.zero_grad()
 
+            if True and i % 100 == 0:
+                print(i, sum(loss_lst) / len(loss_lst))
+                loss_lst = []
+
             if i % 1000 == 0:
                 print('-------------------------')
-                print(i, loss)
                 s0_test = torch.ones((1, 2)).cuda() * 0.0
                 sk_test = torch.ones((1, 2)).cuda() * 0.0
 
@@ -939,14 +1005,16 @@ if __name__ == '__main__':
                 sk_test[:,0] += 0.6
                 sk_test[:,1] += 0.1
 
-                traj = tsynth(s0_test, sk_test*0.0)
+                #traj = tsynth(s0_test, sk_test*0.0)
+                #traj = diffusion.sample(classes = torch.cat([s0_test, sk_test],dim=1), cond_scale=1.0)
+                traj = diffusion.sample(batch_size = 1, cond_fn=cond_fn, guidance_kwargs={"classifier_scale":1.0})
 
                 print('true start', s0_test)
                 print('k', k)
                 print('true end', sk_test)
 
                 print('synth traj')
-                print(traj.reshape((1, k, 2)))
+                print(torch.round(traj.permute(0,2,1).reshape((1, k, 2))[0], decimals=3))
 
     elif args.opr == 'qplanner':
 

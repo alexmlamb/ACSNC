@@ -1,10 +1,10 @@
 
 '''
 
--Learn p(s[t : t + k] | s[t], s[t+k]).  
--We can then do an inverse-model on the trajectory as our plan.  
+-Learn p(s[t : t + k], a[t : t+k] | s[t], s[t+k]).  
 
-(N,2), (N,2) --> (N,k).  
+-Use diffusion planner with classifier-free guidance.  
+
 
 
 '''
@@ -16,7 +16,7 @@ import numpy as np
 
 def sample_ex(S,k):
 
-    t = random.randint(0, S.shape[0]-20)
+    t = random.randint(0, S.shape[0]-100)
 
     return S[t:t+k]
 
@@ -24,10 +24,11 @@ def sample_trajectory_batch(S, bs, k):
     st = []
 
     for b in range(bs):
-        s = sample_ex(S,k)
+        s = torch.Tensor(sample_ex(S,k)).unsqueeze(0)
         st.append(s)
 
-    st = torch.Tensor(np.array(st)).cuda()
+    st = torch.cat(st,dim=0).cuda()
+    #st = torch.Tensor(np.array(st)).cuda()
 
     return st
 
